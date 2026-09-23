@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Filament HS 3D</string>
+    <string name="title_activity_main">Filament HS 3D</string>
+    <string name="package_name">com.ashblody.filamenths3d</string>
+    <string name="custom_url_scheme">com.ashblody.filamenths3d</string>
+</resources>

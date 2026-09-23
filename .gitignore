@@ -9,3 +9,14 @@ dist-ssr
 !.vscode/extensions.json
 .idea
 .DS_Store
+
+# Capacitor / Android local
+android/.gradle/
+android/app/build/
+android/build/
+android/local.properties
+android/captures/
+*.apk
+*.aab
+*.keystore
+*.jks

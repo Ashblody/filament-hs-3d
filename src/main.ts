@@ -22,9 +22,12 @@ import {
   NfcUserError,
   readNfcOnce,
   writeNfcUrl,
+  resultFromOpenPrintTagBytes,
+  base64ToBytes,
   type NfcReadResult,
 } from './nfc.ts'
 import { mapOptMaterialToCategory } from './openprinttag.ts'
+import OpenPrintTagNfc, { isAndroidNative, isNativeCapacitor } from './plugins/openprinttag-nfc.ts'
 import {
   decodeQrFromFile,
   decodeQrFromVideo,
@@ -370,7 +373,7 @@ function handleNfcReadResult(result: NfcReadResult, statusEl: Element | null) {
   if (result.kind === 'openprinttag' && result.openPrintTag) {
     const id = upsertSpoolFromOpenPrintTag(result)
     openSpool(id)
-    showToast('OpenPrintTag (NDEF) → tuljava')
+    showToast(isNativeCapacitor() ? 'OpenPrintTag → zaloga' : 'OpenPrintTag (NDEF) → tuljava')
     return
   }
 
@@ -404,13 +407,14 @@ function upsertSpoolFromOpenPrintTag(result: NfcReadResult): string {
       ? f.purchasePrice / (full / 1000)
       : (existing?.pricePerKg ?? 0)
   const notesParts = [
-    'Uvoženo iz OpenPrintTag (NDEF MIME).',
+    'Uvoženo iz OpenPrintTag.',
     f.materialName ? `Material: ${f.materialName}` : '',
     f.materialTypeAbbrev ? `Tip: ${f.materialTypeAbbrev}` : '',
+    f.filamentDiameterUm != null ? `Premer: ${(f.filamentDiameterUm / 1000).toFixed(2)} mm` : '',
     f.purchasePrice != null
       ? `Cena: ${f.purchasePrice}${f.purchaseCurrency ? ' ' + f.purchaseCurrency : ''}`
       : '',
-    'Tovarniški Prusament SLIX2 (ISO 15693) Web NFC ne vidi — ta uvoz deluje samo, če je OPT na NTAG.',
+    'Vir: OpenPrintTag (ISO 15693 NFC-V ali NDEF MIME).',
   ].filter(Boolean)
 
   const now = new Date().toISOString()
@@ -465,16 +469,27 @@ function renderNfc() {
     </section>
     <section class="card">
       <h2>OpenPrintTag / Prusament</h2>
-      <div class="note warn">
-        Tovarniške <strong>Prusament / OpenPrintTag</strong> oznake so <strong>ISO 15693 (NFC-V, ICODE SLIX2)</strong>.
-        <strong>Chrome Web NFC jih ne more prebrati</strong> — samo NFC-A / NTAG z NDEF.
-      </div>
-      <p class="hint" style="margin-top:8px">
-        Za branje OpenPrintTag uporabi nativno aplikacijo
-        (<a href="https://openprinttag.org" target="_blank" rel="noopener">openprinttag.org</a>,
-        Prusa NFC Reader, NFC Tools, SimplyPrint), nato tuljavo <strong>ročno vnesi v Zalogo</strong>.
-        Ne piši našega URL-ja čez OpenPrintTag oznako — lahko pokvariš kompatibilnost.
-      </p>
+      ${
+        isAndroidNative()
+          ? `
+        <button type="button" class="btn btn-primary btn-block" id="opt-read">Preberi OpenPrintTag</button>
+        <p class="hint" id="opt-status">Približaj Prusament / OpenPrintTag (ICODE SLIX2, ISO 15693) hrbtu telefona. Branje je samo za branje — ne pišemo na tovarniške oznake.</p>
+        <div class="note" style="margin-top:10px">
+          Uvozi v <strong>Zalogo</strong>: znamka, material, barva, polna/preostala teža, premer. Zapis (write) ni omogočen (zaščita Prusa tagov).
+        </div>
+      `
+          : `
+        <div class="note warn">
+          Tovarniške <strong>Prusament / OpenPrintTag</strong> oznake so <strong>ISO 15693 (NFC-V)</strong>.
+          Web NFC jih ne vidi. Namesti <strong>Android APK</strong> (Filament HS 3D) za gumb
+          <em>Preberi OpenPrintTag</em>, ali uporabi zunanjo app in vnesi ročno.
+        </div>
+        <p class="hint" style="margin-top:8px">
+          Spec: <a href="https://openprinttag.org" target="_blank" rel="noopener">openprinttag.org</a>.
+          Ne piši našega URL-ja čez OpenPrintTag oznako.
+        </p>
+      `
+      }
     </section>
     <section class="card">
       <h2>Skeniraj QR</h2>
@@ -756,6 +771,28 @@ function bind() {
       showToast(msg)
     }
   })
+
+  app.querySelector('#opt-read')?.addEventListener('click', async () => {
+    const statusEl = app.querySelector('#opt-status')
+    try {
+      if (!isAndroidNative()) {
+        throw new Error('OpenPrintTag NFC-V deluje samo v Android APK.')
+      }
+      if (statusEl) statusEl.textContent = 'Pripravljen — približaj OpenPrintTag… (do 30 s)'
+      showToast('Približaj OpenPrintTag…')
+      const scan = await OpenPrintTagNfc.scan({ timeoutMs: 30_000 })
+      const bytes = base64ToBytes(scan.payloadBase64)
+      const result = resultFromOpenPrintTagBytes(bytes, scan.uidHex || '')
+      if (statusEl) statusEl.textContent = result.summary
+      handleNfcReadResult(result, statusEl)
+      showToast('OpenPrintTag uvožen v zalogo')
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Napaka OpenPrintTag'
+      if (statusEl) statusEl.textContent = msg
+      showToast(msg)
+    }
+  })
+
 
   const video = app.querySelector<HTMLVideoElement>('#qr-video')
   const wrap = app.querySelector('#qr-video-wrap')

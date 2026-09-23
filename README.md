@@ -58,6 +58,49 @@ Vzorec iz HS Pricing Sheet:
 
 V kalkulatorju tapni **Naloži vzorec** in primerjaj z Excelom.
 
+
+## Android APK (OpenPrintTag / NFC-V)
+
+Nativna Capacitor app za **Galaxy S24+** (in druge Androide z NFC). Omogoča branje tovarniških **Prusament OpenPrintTag** (ICODE SLIX2, ISO 15693), ki jih Web NFC ne vidi.
+
+### Namestitev (sideload)
+
+1. Prenesi APK iz [GitHub Releases](https://github.com/Ashblody/filament-hs-3d/releases).
+2. Na telefonu: **Nastavitve → Varnost** (ali Aplikacije) → dovoli **Namestitev neznanih aplikacij** za Chrome/Files.
+3. Odpri APK in namesti **Filament HS 3D**.
+4. Vklopi **NFC**.
+
+### Preberi OpenPrintTag
+
+1. Odpri app → zavihek **NFC**.
+2. Tapni **Preberi OpenPrintTag**.
+3. Približaj Prusament / OpenPrintTag oznako hrbtu telefona (do ~30 s).
+4. Ob uspehu se tuljava **ustvari/posodobi v Zalogi** (znamka, material, barva, teža, premer).
+
+### Kaj se uvozi
+
+| Polje OPT | Zaloga |
+|-----------|--------|
+| brand_name | Znamka |
+| material_name / material_type | Material + opombe |
+| primary_color | Barva (#RRGGBB) |
+| actual/nominal_netto_full_weight − consumed_weight | Preostanek / polna teža |
+| filament_diameter_v2 | Premer v opombah |
+
+### Kaj še ne dela
+
+- **Zapis** na OpenPrintTag (namerno izklopljen — tovarniški Prusa tagi so lahko zaščiteni; tveganje brickanja).
+- iOS (samo Android APK).
+- Web Chrome še vedno bere le NTAG (NFC-A) z našim URL-jem / OPT MIME na NTAG.
+
+### Gradnja
+
+```bash
+npm install
+npm run android:apk   # zahteva JDK 17+ in Android SDK
+# APK: android/app/build/outputs/apk/debug/app-debug.apk
+```
+
 ## Razvoj
 
 ```bash

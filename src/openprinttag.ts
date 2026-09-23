@@ -32,6 +32,7 @@ const MAIN = {
   nominalNettoFullWeight: 16,
   actualNettoFullWeight: 17,
   primaryColor: 19,
+  filamentDiameterV2: 61,
 } as const
 
 /** Aux field keys */
@@ -80,6 +81,8 @@ export interface OpenPrintTagFields {
   consumedWeightG?: number
   purchasePrice?: number
   purchaseCurrency?: string
+  /** Diameter in µm (key 61); default 1750 if absent */
+  filamentDiameterUm?: number
 }
 
 export function parseOpenPrintTagPayload(payload: Uint8Array): OpenPrintTagFields | null {
@@ -115,6 +118,7 @@ export function parseOpenPrintTagPayload(payload: Uint8Array): OpenPrintTagField
     const nominal = mapGetNumber(main, MAIN.nominalNettoFullWeight)
     const actual = mapGetNumber(main, MAIN.actualNettoFullWeight)
     const fullWeightG = actual ?? nominal
+    const diameterUm = mapGetNumber(main, MAIN.filamentDiameterV2)
 
     let consumedWeightG: number | undefined
     let purchasePrice: number | undefined
@@ -144,6 +148,7 @@ export function parseOpenPrintTagPayload(payload: Uint8Array): OpenPrintTagField
       consumedWeightG,
       purchasePrice,
       purchaseCurrency,
+      filamentDiameterUm: diameterUm ?? 1750,
     }
   } catch {
     return null
@@ -176,5 +181,6 @@ export function formatOptSummary(fields: OpenPrintTagFields): string {
   else if (fields.materialTypeAbbrev) parts.push(fields.materialTypeAbbrev)
   if (fields.colorHex) parts.push(fields.colorHex)
   if (fields.remainingWeightG != null) parts.push(`${Math.round(fields.remainingWeightG)} g`)
+  if (fields.filamentDiameterUm != null) parts.push(`${(fields.filamentDiameterUm / 1000).toFixed(2)} mm`)
   return parts.join(' · ')
 }

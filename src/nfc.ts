@@ -291,3 +291,31 @@ function decodeUrlRecord(record: NDEFRecord): string {
   const prefix = prefixes[prefixCode] ?? ''
   return prefix + new TextDecoder().decode(bytes.slice(1))
 }
+
+/** Build NfcReadResult from native OpenPrintTag NFC-V bridge payload. */
+export function resultFromOpenPrintTagBytes(
+  payload: Uint8Array,
+  serialNumber: string,
+): NfcReadResult {
+  const openPrintTag = parseOpenPrintTagPayload(payload)
+  if (!openPrintTag) {
+    throw new NfcUserError(
+      'Oznaka je NFC-V, a OpenPrintTag CBOR ni prepoznan.',
+      'unknown_format',
+    )
+  }
+  return {
+    serialNumber,
+    kind: 'openprinttag',
+    openPrintTag,
+    texts: [formatOptSummary(openPrintTag)],
+    summary: formatOptSummary(openPrintTag),
+  }
+}
+
+export function base64ToBytes(b64: string): Uint8Array {
+  const bin = atob(b64)
+  const out = new Uint8Array(bin.length)
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i)
+  return out
+}
