@@ -17,7 +17,14 @@ import {
   percentFromGrams,
 } from './data.ts'
 import { calculatePrice, sanitySuggested } from './calc.ts'
-import { isNfcSupported, readNfcOnce, writeNfcUrl } from './nfc.ts'
+import {
+  isNfcSupported,
+  NfcUserError,
+  readNfcOnce,
+  writeNfcUrl,
+  type NfcReadResult,
+} from './nfc.ts'
+import { mapOptMaterialToCategory } from './openprinttag.ts'
 import {
   decodeQrFromFile,
   decodeQrFromVideo,
@@ -326,7 +333,7 @@ function renderEditorModal() {
             ${
               nfcOk
                 ? `<button type="button" class="btn btn-secondary btn-block" id="write-nfc" style="margin-top:10px">Zapiši NFC</button>
-                   <p class="hint">Chrome Android: približaj prazno NFC oznako telefonu po tapu.</p>`
+                   <p class="hint">Chrome Android + NTAG: po tapu približaj prazno NTAG. Ne piši čez Prusament OpenPrintTag (ISO 15693).</p>`
                 : `<p class="note warn">NFC ni na voljo v tem brskalniku. Uporabi QR kodo.</p>`
             }
           </div>`
@@ -337,22 +344,137 @@ function renderEditorModal() {
   `
 }
 
+
+function handleNfcReadResult(result: NfcReadResult, statusEl: Element | null) {
+  if (statusEl) statusEl.textContent = result.summary
+
+  if (result.kind === 'spool' && result.spoolId) {
+    const spool = data.spools.find((s) => s.id === result.spoolId)
+    if (spool && result.serialNumber) {
+      spool.nfcTagId = result.serialNumber
+      spool.updatedAt = new Date().toISOString()
+      persist()
+    }
+    if (!spool) {
+      showToast('Tuljava ni v zalogi — ID prebran, vendar manjka lokalno')
+      if (statusEl) {
+        statusEl.textContent = `Prebran ID ${result.spoolId}, a tuljava ni v tej napravi.`
+      }
+      return
+    }
+    openSpool(result.spoolId)
+    showToast('Odprto iz NFC')
+    return
+  }
+
+  if (result.kind === 'openprinttag' && result.openPrintTag) {
+    const id = upsertSpoolFromOpenPrintTag(result)
+    openSpool(id)
+    showToast('OpenPrintTag (NDEF) → tuljava')
+    return
+  }
+
+  if (result.kind === 'empty') {
+    showToast('Prazna oznaka — zapiši naš URL ali vnesi tuljavo ročno')
+    return
+  }
+
+  showToast(result.summary)
+}
+
+function upsertSpoolFromOpenPrintTag(result: NfcReadResult): string {
+  const f = result.openPrintTag!
+  const serial = result.serialNumber || ''
+  const existing =
+    (serial && data.spools.find((s) => s.nfcTagId === serial)) ||
+    data.spools.find(
+      (s) =>
+        s.brandName === (f.brandName || s.brandName) &&
+        s.notes.includes('OpenPrintTag') &&
+        (f.materialName ? s.notes.includes(f.materialName) : false),
+    )
+
+  const material = mapOptMaterialToCategory(f)
+  const color = f.colorHex || existing?.color || '#888888'
+  const brandName = f.brandName || existing?.brandName || 'OpenPrintTag'
+  const full = Math.round(f.fullWeightG ?? existing?.fullSpoolGrams ?? DEFAULT_FULL_SPOOL_G)
+  const remaining = Math.round(f.remainingWeightG ?? existing?.remainingGrams ?? full)
+  const pricePerKg =
+    f.purchasePrice != null && full > 0
+      ? f.purchasePrice / (full / 1000)
+      : (existing?.pricePerKg ?? 0)
+  const notesParts = [
+    'Uvoženo iz OpenPrintTag (NDEF MIME).',
+    f.materialName ? `Material: ${f.materialName}` : '',
+    f.materialTypeAbbrev ? `Tip: ${f.materialTypeAbbrev}` : '',
+    f.purchasePrice != null
+      ? `Cena: ${f.purchasePrice}${f.purchaseCurrency ? ' ' + f.purchaseCurrency : ''}`
+      : '',
+    'Tovarniški Prusament SLIX2 (ISO 15693) Web NFC ne vidi — ta uvoz deluje samo, če je OPT na NTAG.',
+  ].filter(Boolean)
+
+  const now = new Date().toISOString()
+  if (existing) {
+    existing.material = material
+    existing.color = color
+    existing.brandName = brandName
+    existing.fullSpoolGrams = full
+    existing.remainingGrams = remaining
+    if (pricePerKg > 0) existing.pricePerKg = pricePerKg
+    if (serial) existing.nfcTagId = serial
+    existing.notes = notesParts.join(' ')
+    existing.updatedAt = now
+    persist()
+    return existing.id
+  }
+
+  const spool: Spool = {
+    id: uid('spool'),
+    material,
+    color,
+    brandName,
+    remainingGrams: remaining,
+    fullSpoolGrams: full,
+    pricePerKg,
+    notes: notesParts.join(' '),
+    nfcTagId: serial || undefined,
+    createdAt: now,
+    updatedAt: now,
+  }
+  data.spools.unshift(spool)
+  persist()
+  return spool.id
+}
+
 function renderNfc() {
   const nfcOk = isNfcSupported()
   return `
     <section class="card">
       <h2>NFC + QR</h2>
-      <p class="hint">Odpri tuljavo s skeniranjem oznake. NFC deluje na Chrome Android.</p>
+      <p class="hint">Odpri tuljavo s skeniranjem <strong>naše</strong> NTAG oznake (URL/QR). NFC deluje samo v <strong>Chrome na Androidu</strong>, po tapu gumba.</p>
       ${
         nfcOk
           ? `
         <button type="button" class="btn btn-primary btn-block" id="nfc-read">Preberi NFC oznako</button>
-        <p class="hint">Približaj NFC tag telefonu. Podprta vsebina: URL z <code>#spool/…</code> ali besedilo <code>spool:id</code>.</p>
+        <p class="hint" id="nfc-status">Približaj NTAG oznako. Podprto: URL z <code>#spool/…</code>, <code>spool:id</code>, ali OpenPrintTag MIME na NTAG.</p>
       `
           : `
-        <div class="note warn">Web NFC ni podprt (potreben Chrome na Androidu). Na voljo je samo QR.</div>
+        <div class="note warn">Web NFC ni podprt (potreben Chrome na Androidu + HTTPS). Na voljo je samo QR.</div>
       `
       }
+    </section>
+    <section class="card">
+      <h2>OpenPrintTag / Prusament</h2>
+      <div class="note warn">
+        Tovarniške <strong>Prusament / OpenPrintTag</strong> oznake so <strong>ISO 15693 (NFC-V, ICODE SLIX2)</strong>.
+        <strong>Chrome Web NFC jih ne more prebrati</strong> — samo NFC-A / NTAG z NDEF.
+      </div>
+      <p class="hint" style="margin-top:8px">
+        Za branje OpenPrintTag uporabi nativno aplikacijo
+        (<a href="https://openprinttag.org" target="_blank" rel="noopener">openprinttag.org</a>,
+        Prusa NFC Reader, NFC Tools, SimplyPrint), nato tuljavo <strong>ročno vnesi v Zalogo</strong>.
+        Ne piši našega URL-ja čez OpenPrintTag oznako — lahko pokvariš kompatibilnost.
+      </p>
     </section>
     <section class="card">
       <h2>Skeniraj QR</h2>
@@ -370,12 +492,12 @@ function renderNfc() {
       <p class="hint" id="qr-status">Pripravljen.</p>
     </section>
     <section class="card">
-      <h2>Kako zapisati NFC</h2>
+      <h2>Kako zapisati našo NFC oznako</h2>
       <ol style="margin:0;padding-left:1.2rem;font-size:0.9rem;color:var(--muted)">
+        <li>Uporabi prazno <strong>NTAG213/215/216</strong> (ne Prusament SLIX2).</li>
         <li>Odpri tuljavo v zavihku Zaloga.</li>
         <li>Tapni <strong>Zapiši NFC</strong> (Chrome Android).</li>
-        <li>Približaj prazno / prepisovalno NFC oznako hrbtu telefona.</li>
-        <li>Počakaj potrditev — oznaka bo vsebovala URL aplikacije z <code>#spool/id</code>.</li>
+        <li>Približaj oznako — zapiše se URL z <code>#spool/id</code>.</li>
       </ol>
     </section>
   `
@@ -601,44 +723,37 @@ function bind() {
       if (!editingId) return
       const link = spoolAbsoluteLink(editingId, APP_PAGES_URL)
       try {
-        showToast('Približaj NFC oznako…')
+        showToast('Približaj prazno NTAG oznako…')
         await writeNfcUrl(link)
         const spool = data.spools.find((s) => s.id === editingId)
         if (spool) {
           spool.updatedAt = new Date().toISOString()
           persist()
         }
-        showToast('NFC zapisan')
+        showToast('NFC zapisan (URL tuljave)')
       } catch (err) {
-        const msg = err instanceof Error ? err.message : 'Napaka NFC'
-        showToast(msg)
+        if (err instanceof NfcUserError && err.code === 'abort') return
+        showToast(err instanceof Error ? err.message : 'Napaka NFC')
       }
     })
   }
 
-  // NFC tab
+  // NFC tab — scan must start from this button tap (user gesture)
   app.querySelector('#nfc-read')?.addEventListener('click', async () => {
+    const statusEl = app.querySelector('#nfc-status')
     try {
       nfcAbort?.abort()
       nfcAbort = new AbortController()
+      if (statusEl) statusEl.textContent = 'Čakam na NTAG oznako… (do 25 s)'
       showToast('Približaj NFC…')
-      const { serialNumber, texts } = await readNfcOnce(nfcAbort.signal)
-      const payload = texts.find((t) => parseSpoolPayload(t)) ?? texts[0] ?? ''
-      const id = parseSpoolPayload(payload)
-      if (!id) {
-        showToast('Ni spoja v oznaki')
-        return
-      }
-      const spool = data.spools.find((s) => s.id === id)
-      if (spool && serialNumber) {
-        spool.nfcTagId = serialNumber
-        spool.updatedAt = new Date().toISOString()
-        persist()
-      }
-      openSpool(id)
+      const result = await readNfcOnce(nfcAbort.signal)
+      handleNfcReadResult(result, statusEl)
     } catch (err) {
+      if (err instanceof NfcUserError && err.code === 'abort') return
       if (err instanceof DOMException && err.name === 'AbortError') return
-      showToast(err instanceof Error ? err.message : 'NFC napaka')
+      const msg = err instanceof Error ? err.message : 'NFC napaka'
+      if (statusEl) statusEl.textContent = msg
+      showToast(msg)
     }
   })
 

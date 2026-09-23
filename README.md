@@ -21,13 +21,22 @@ Mobilna PWA za **Andreja (Ashblody)**: zaloga filamenta, NFC/QR oznake in kalkul
 
 1. Omogoči NFC v nastavitvah telefona.
 2. Odpri to PWA v **Chrome** (ne v aplikaciji iz trgovine — potreben je Chrome z Web NFC).
-3. V **Zaloga** odpri tuljavo (ali jo ustvari in shrani).
-4. Tapni **Zapiši NFC**.
-5. Približaj **prazno / prepisovalno** NFC nalepko hrbtu telefona.
-6. Počakaj sporočilo »NFC zapisan«. Oznaka vsebuje URL:
+3. Uporabi **NTAG213/215/216** (NFC-A). **Ne** uporabljaj tovarniških Prusament OpenPrintTag (ICODE SLIX2 / ISO 15693) — Web NFC jih ne vidi.
+4. V **Zaloga** odpri tuljavo (ali jo ustvari in shrani).
+5. Tapni **Zapiši NFC** (zahtevan uporabniški gest).
+6. Približaj prazno / prepisovalno NTAG nalepko hrbtu telefona.
+7. Počakaj sporočilo »NFC zapisan«. Oznaka vsebuje URL:
    `https://ashblody.github.io/filament-hs-3d/#spool/<id>`
-7. Preveri: zavihek **NFC** → **Preberi NFC oznako** → odpre se ista tuljava.
-8. Če NFC ni na voljo: uporabi **QR** (natisni iz urejevalnika) in skeniraj v zavihku NFC.
+8. Preveri: zavihek **NFC** → **Preberi NFC oznako** → odpre se ista tuljava.
+9. Če NFC ni na voljo: uporabi **QR** (natisni iz urejevalnika) in skeniraj v zavihku NFC.
+
+## OpenPrintTag / Prusament
+
+Tovarniške OpenPrintTag oznake so **ISO 15693 (NFC-V)**. Chrome Web NFC podpira le NDEF na NFC-A (NTAG). Zato te PWA **ne more** prebrati Prusament SLIX2 tagov — to ni napaka našega URL formata.
+
+Za OpenPrintTag uporabi nativno app ([openprinttag.org](https://openprinttag.org), Prusa NFC Reader, NFC Tools, SimplyPrint) in podatke vnesi ročno v **Zaloga**. Ne prepisuj OpenPrintTag oznake z našim URL-jem.
+
+Če je OpenPrintTag NDEF MIME (`application/vnd.openprinttag`) zapisán na **NTAG**, ga lahko brskalnik vidi — aplikacija ga potem uvozi v zalogo.
 
 ## Kaj preveriti (številke vs Excel)
 
