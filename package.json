@@ -1,0 +1,22 @@
+{
+  "name": "filament-hs-3d",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "jsqr": "^1.4.0",
+    "qrcode": "^1.5.4"
+  },
+  "devDependencies": {
+    "@types/qrcode": "^1.5.5",
+    "typescript": "~5.8.3",
+    "vite": "^6.3.5",
+    "gh-pages": "^6.3.0"
+  },
+  "description": "Filament / HS 3D — zaloga, NFC/QR, kalkulator tiska"
+}

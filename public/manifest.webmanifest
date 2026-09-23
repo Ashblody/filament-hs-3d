@@ -1,0 +1,19 @@
+{
+  "name": "Filament / HS 3D",
+  "short_name": "Filament HS",
+  "description": "Zaloga filamenta, NFC/QR in kalkulator 3D tiska",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f4ece4",
+  "theme_color": "#c45c26",
+  "lang": "sl",
+  "icons": [
+    {
+      "src": "./favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
