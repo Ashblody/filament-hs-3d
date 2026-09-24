@@ -2,6 +2,7 @@ import './style.css'
 import {
   APP_PAGES_URL,
   CATALOG_COLORS,
+  COLOR_PALETTE,
   DEFAULT_FULL_SPOOL_G,
   DEFAULT_POST_MIN,
   DEFAULT_PREP_MIN,
@@ -12,8 +13,10 @@ import {
   formatGrams,
   gramsFromPercent,
   normalizeColorKey,
+  paletteHexForName,
   parsePrintHours,
   percentFromGrams,
+  resolveSpoolColor,
 } from './data.ts'
 import { calculatePrice, sanitySuggested } from './calc.ts'
 import {
@@ -39,8 +42,10 @@ import {
 import {
   findMaterialIn,
   loadSettings,
+  pricePerKgFromSpool,
   resetSettings,
   saveSettings,
+  slugId,
 } from './settings.ts'
 import {
   escapeHtml,
@@ -55,6 +60,7 @@ import type {
   AppSettings,
   CatalogColor,
   MaterialCategory,
+  MaterialDef,
   Spool,
   TabId,
 } from './types.ts'
@@ -211,7 +217,8 @@ function emptySpool(): Spool {
   return {
     id: uid('spool'),
     material: defMat?.category ?? 'PLA',
-    color: '',
+    color: 'Črna',
+    colorHex: '#1a1a1a',
     brandName: defMat?.name ?? 'PLASTIKA TRCEK PLA',
     remainingGrams: DEFAULT_FULL_SPOOL_G,
     fullSpoolGrams: DEFAULT_FULL_SPOOL_G,
@@ -222,8 +229,8 @@ function emptySpool(): Spool {
   }
 }
 
-function renderSwatch(color: string): string {
-  const css = colorToCss(color)
+function renderSwatch(color: string, colorHex?: string): string {
+  const css = resolveSpoolColor(color, colorHex)
   if (!css) {
     return `<span class="spool-swatch unknown" title="${escapeHtml(color || '?')}">${escapeHtml(colorInitial(color))}</span>`
   }
@@ -340,7 +347,7 @@ function renderSpoolRow(s: Spool): string {
   return `
     <div class="spool-item${expanded ? ' expanded' : ''}" data-spool-id="${escapeHtml(s.id)}" role="button" tabindex="0">
       <div class="spool-row">
-        ${renderSwatch(s.color)}
+        ${renderSwatch(s.color, s.colorHex)}
         <div class="spool-main">
           <div class="title">${escapeHtml(s.color || 'brez barve')} · ${escapeHtml(s.material)}</div>
           <div class="basics">${escapeHtml(s.brandName)}${s.nfcTagId ? ' · NFC' : ''}</div>
@@ -405,10 +412,35 @@ function renderEditorModal() {
                 ).join('')}
               </select>
             </div>
-            <div class="field inline">
-              <label for="f-color">Barva</label>
-              <input id="f-color" name="color" value="${escapeHtml(s.color)}" required placeholder="npr. Črna" />
+          </div>
+          <div class="field">
+            <label>Barva</label>
+            <div class="color-palette" role="listbox" aria-label="Paleta barv">
+              ${COLOR_PALETTE.map((c) => {
+                const selected =
+                  normalizeColorKey(s.color) === normalizeColorKey(c.name) ||
+                  (s.colorHex || '').toLowerCase() === c.hex.toLowerCase()
+                const light = isLightColor(c.hex)
+                return `<button type="button" class="palette-swatch${selected ? ' selected' : ''}${light ? ' light-fg' : ''}" data-palette-name="${escapeHtml(c.name)}" data-palette-hex="${escapeHtml(c.hex)}" style="background:${escapeHtml(c.hex)}" title="${escapeHtml(c.name)}" aria-pressed="${selected ? 'true' : 'false'}"></button>`
+              }).join('')}
             </div>
+            <input type="hidden" id="f-color" name="color" value="${escapeHtml(s.color)}" required />
+            <input type="hidden" id="f-color-hex" name="colorHex" value="${escapeHtml(s.colorHex || paletteHexForName(s.color) || '')}" />
+            <div class="palette-selected" id="palette-selected">${escapeHtml(s.color || 'Izberi barvo')}${s.colorHex || paletteHexForName(s.color) ? ` · ${escapeHtml(s.colorHex || paletteHexForName(s.color) || '')}` : ''}</div>
+            <details class="color-custom">
+              <summary>Druga barva (ime + hex)</summary>
+              <div class="row" style="margin-top:6px">
+                <div class="field inline">
+                  <label for="f-color-custom-name">Ime</label>
+                  <input id="f-color-custom-name" type="text" placeholder="npr. Neon Green" />
+                </div>
+                <div class="field inline">
+                  <label for="f-color-custom-hex">Hex</label>
+                  <input id="f-color-custom-hex" type="color" value="${escapeHtml((s.colorHex || paletteHexForName(s.color) || '#888888').slice(0, 7))}" />
+                </div>
+              </div>
+              <button type="button" class="btn btn-ghost btn-sm" id="apply-custom-color">Uporabi</button>
+            </details>
           </div>
           <div class="field">
             <label for="f-brand">Znamka / ime</label>
@@ -550,6 +582,7 @@ function upsertSpoolFromOpenPrintTag(result: NfcReadResult): string {
   if (existing) {
     existing.material = material
     existing.color = color
+    existing.colorHex = /^#/i.test(color) ? color : (existing.colorHex || paletteHexForName(color) || undefined)
     existing.brandName = brandName
     existing.fullSpoolGrams = full
     existing.remainingGrams = remaining
@@ -565,6 +598,7 @@ function upsertSpoolFromOpenPrintTag(result: NfcReadResult): string {
     id: uid('spool'),
     material,
     color,
+    colorHex: /^#/i.test(color) ? color : paletteHexForName(color) || undefined,
     brandName,
     remainingGrams: remaining,
     fullSpoolGrams: full,
@@ -756,7 +790,7 @@ function renderNastavitve() {
         <h2>Nastavitve kalkulatorja</h2>
         <button type="button" class="btn btn-ghost btn-sm" id="reset-settings">Ponastavi Excel</button>
       </div>
-      <p class="hint">Vrednosti se shranijo v localStorage. Kalkulator jih bere tukaj.</p>
+      <p class="hint">Vrednosti v localStorage (<code>filament-hs-3d-settings-v1</code>). Kalkulator jih bere tukaj. Ponastavi Excel obnovi privzete — potem lahko znova dodaš svoje.</p>
       <div class="row">
         <div class="field inline">
           <label for="s-energy">Elektrika (€/kWh)</label>
@@ -781,66 +815,149 @@ function renderNastavitve() {
     </section>
     <section class="card">
       <h2>Tiskalniki</h2>
-      <p class="hint">Cena / življenje (h) / servis / energija (kWh/h)</p>
-      <table class="settings-table">
-        <thead>
-          <tr>
-            <th>Ime</th>
-            <th>Cena €</th>
-            <th>Živ. h</th>
-            <th>Servis</th>
-            <th>kWh/h</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${settings.printers
-            .map(
-              (p, i) => `
-            <tr data-printer-idx="${i}">
-              <td class="name-cell" title="${escapeHtml(p.name)}">${escapeHtml(p.name)}</td>
-              <td><input data-p="price" type="number" min="0" step="1" value="${p.price}" /></td>
-              <td><input data-p="lifeHours" type="number" min="1" step="1" value="${p.lifeHours}" /></td>
-              <td><input data-p="serviceCost" type="number" min="0" step="1" value="${p.serviceCost}" /></td>
-              <td><input data-p="energyKwhPerH" type="number" min="0" step="0.01" value="${p.energyKwhPerH}" /></td>
-            </tr>`,
-            )
-            .join('')}
-        </tbody>
-      </table>
-      <button type="button" class="btn btn-secondary btn-block" id="save-printers">Shrani tiskalnike</button>
+      <p class="hint">Polja iz lista Naprave: ime, cena €, življenje h, servis €, energija kWh/h.</p>
+      <div class="crud-list">
+        ${settings.printers
+          .map(
+            (p, i) => `
+          <div class="crud-item" data-printer-idx="${i}">
+            <div class="field">
+              <label>Ime</label>
+              <input data-p="name" type="text" value="${escapeHtml(p.name)}" />
+            </div>
+            <div class="row">
+              <div class="field inline">
+                <label>Cena €</label>
+                <input data-p="price" type="number" min="0" step="1" value="${p.price}" />
+              </div>
+              <div class="field inline">
+                <label>Živ. h</label>
+                <input data-p="lifeHours" type="number" min="1" step="1" value="${p.lifeHours}" />
+              </div>
+            </div>
+            <div class="row">
+              <div class="field inline">
+                <label>Servis €</label>
+                <input data-p="serviceCost" type="number" min="0" step="1" value="${p.serviceCost}" />
+              </div>
+              <div class="field inline">
+                <label>kWh/h</label>
+                <input data-p="energyKwhPerH" type="number" min="0" step="0.01" value="${p.energyKwhPerH}" />
+              </div>
+            </div>
+            <div class="crud-actions">
+              <button type="button" class="btn btn-secondary btn-sm" data-save-printer="${i}">Shrani</button>
+              <button type="button" class="btn btn-danger btn-sm" data-del-printer="${i}">Izbriši</button>
+            </div>
+          </div>`,
+          )
+          .join('')}
+      </div>
+      <div class="crud-add">
+        <h3>Dodaj tiskalnik</h3>
+        <div class="field">
+          <label for="np-name">Ime</label>
+          <input id="np-name" type="text" placeholder="npr. Bambu X1C" />
+        </div>
+        <div class="row">
+          <div class="field inline">
+            <label for="np-price">Cena €</label>
+            <input id="np-price" type="number" min="0" step="1" value="1000" />
+          </div>
+          <div class="field inline">
+            <label for="np-life">Živ. h</label>
+            <input id="np-life" type="number" min="1" step="1" value="3000" />
+          </div>
+        </div>
+        <div class="row">
+          <div class="field inline">
+            <label for="np-service">Servis €</label>
+            <input id="np-service" type="number" min="0" step="1" value="100" />
+          </div>
+          <div class="field inline">
+            <label for="np-energy">kWh/h</label>
+            <input id="np-energy" type="number" min="0" step="0.01" value="0.2" />
+          </div>
+        </div>
+        <button type="button" class="btn btn-primary btn-block" id="add-printer">Dodaj tiskalnik</button>
+      </div>
     </section>
     <section class="card">
-      <h2>Materiali (€/kg)</h2>
-      <p class="hint">Seznam, ki ga uporablja kalkulator.</p>
-      <table class="settings-table">
-        <thead>
-          <tr>
-            <th>Ime</th>
-            <th>Kat.</th>
-            <th>€/kg</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${settings.materials
-            .map(
-              (m, i) => `
-            <tr data-material-idx="${i}">
-              <td class="name-cell" title="${escapeHtml(m.name)}">${escapeHtml(m.name)}</td>
-              <td>
+      <h2>Materiali / filamenti</h2>
+      <p class="hint">€/kg ali cena tuljave + kg → €/kg. Seznam v spustnem meniju kalkulatorja.</p>
+      <div class="crud-list">
+        ${settings.materials
+          .map(
+            (m, i) => `
+          <div class="crud-item" data-material-idx="${i}">
+            <div class="field">
+              <label>Ime</label>
+              <input data-m="name" type="text" value="${escapeHtml(m.name)}" />
+            </div>
+            <div class="row">
+              <div class="field inline">
+                <label>Kategorija</label>
                 <select data-m="category">
                   ${MATERIAL_CATEGORIES.map(
                     (c) =>
                       `<option value="${c}" ${m.category === c ? 'selected' : ''}>${c}</option>`,
                   ).join('')}
                 </select>
-              </td>
-              <td><input data-m="pricePerKg" type="number" min="0" step="0.01" value="${Number(m.pricePerKg.toFixed(4))}" /></td>
-            </tr>`,
-            )
-            .join('')}
-        </tbody>
-      </table>
-      <button type="button" class="btn btn-secondary btn-block" id="save-materials">Shrani materiale</button>
+              </div>
+              <div class="field inline">
+                <label>€/kg</label>
+                <input data-m="pricePerKg" type="number" min="0" step="0.01" value="${Number(m.pricePerKg.toFixed(4))}" />
+              </div>
+            </div>
+            <div class="row">
+              <div class="field inline">
+                <label>Cena tuljave €</label>
+                <input data-m="spoolPrice" type="number" min="0" step="0.01" value="${m.spoolPrice ?? ''}" placeholder="opcijsko" />
+              </div>
+              <div class="field inline">
+                <label>Tuljava kg</label>
+                <input data-m="spoolKg" type="number" min="0" step="0.01" value="${m.spoolKg ?? ''}" placeholder="opcijsko" />
+              </div>
+            </div>
+            <div class="crud-actions">
+              <button type="button" class="btn btn-secondary btn-sm" data-save-material="${i}">Shrani</button>
+              <button type="button" class="btn btn-danger btn-sm" data-del-material="${i}">Izbriši</button>
+            </div>
+          </div>`,
+          )
+          .join('')}
+      </div>
+      <div class="crud-add">
+        <h3>Dodaj material</h3>
+        <div class="field">
+          <label for="nm-name">Ime</label>
+          <input id="nm-name" type="text" placeholder="npr. Bambu PLA Basic" />
+        </div>
+        <div class="row">
+          <div class="field inline">
+            <label for="nm-cat">Kategorija</label>
+            <select id="nm-cat">
+              ${MATERIAL_CATEGORIES.map((c) => `<option value="${c}">${c}</option>`).join('')}
+            </select>
+          </div>
+          <div class="field inline">
+            <label for="nm-ppk">€/kg</label>
+            <input id="nm-ppk" type="number" min="0" step="0.01" value="25" />
+          </div>
+        </div>
+        <div class="row">
+          <div class="field inline">
+            <label for="nm-spool-price">Cena tuljave €</label>
+            <input id="nm-spool-price" type="number" min="0" step="0.01" placeholder="opcijsko" />
+          </div>
+          <div class="field inline">
+            <label for="nm-spool-kg">Tuljava kg</label>
+            <input id="nm-spool-kg" type="number" min="0" step="0.01" placeholder="npr. 1" />
+          </div>
+        </div>
+        <p class="hint">Če vpišeš ceno tuljave + kg, se €/kg izračuna samodejno.</p>
+        <button type="button" class="btn btn-primary btn-block" id="add-material">Dodaj material</button>
+      </div>
     </section>
   `
 }
@@ -931,6 +1048,7 @@ function bind() {
         id: uid('spool'),
         material: (material as MaterialCategory) || 'PLA',
         color: color || '',
+        colorHex: paletteHexForName(color || '') || colorToCss(color || '') || undefined,
         brandName: matchMat?.name || brandHint || material || '',
         remainingGrams: DEFAULT_FULL_SPOOL_G,
         fullSpoolGrams: DEFAULT_FULL_SPOOL_G,
@@ -989,6 +1107,39 @@ function bind() {
       }
     })
 
+    const colorNameEl = form.querySelector<HTMLInputElement>('#f-color')!
+    const colorHexEl = form.querySelector<HTMLInputElement>('#f-color-hex')!
+    const selectedLabel = form.querySelector('#palette-selected')
+    const setPaletteSelection = (name: string, hex: string) => {
+      colorNameEl.value = name
+      colorHexEl.value = hex
+      if (selectedLabel) selectedLabel.textContent = `${name} · ${hex}`
+      form.querySelectorAll('.palette-swatch').forEach((btn) => {
+        const el = btn as HTMLElement
+        const on =
+          normalizeColorKey(el.dataset.paletteName || '') === normalizeColorKey(name) ||
+          (el.dataset.paletteHex || '').toLowerCase() === hex.toLowerCase()
+        el.classList.toggle('selected', on)
+        el.setAttribute('aria-pressed', on ? 'true' : 'false')
+      })
+      const customHex = form.querySelector<HTMLInputElement>('#f-color-custom-hex')
+      if (customHex && /^#[0-9a-f]{6}$/i.test(hex)) customHex.value = hex
+    }
+    form.querySelectorAll('[data-palette-name]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const el = btn as HTMLElement
+        setPaletteSelection(el.dataset.paletteName || '', el.dataset.paletteHex || '')
+      })
+    })
+    form.querySelector('#apply-custom-color')?.addEventListener('click', () => {
+      const name =
+        (form.querySelector('#f-color-custom-name') as HTMLInputElement).value.trim() ||
+        colorNameEl.value.trim() ||
+        'Po meri'
+      const hex = (form.querySelector('#f-color-custom-hex') as HTMLInputElement).value
+      setPaletteSelection(name, hex)
+    })
+
     form.addEventListener('submit', (e) => {
       e.preventDefault()
       const now = new Date().toISOString()
@@ -997,6 +1148,7 @@ function bind() {
         id: existing?.id ?? uid('spool'),
         material: (form.querySelector('#f-material') as HTMLSelectElement).value as MaterialCategory,
         color: (form.querySelector('#f-color') as HTMLInputElement).value.trim(),
+        colorHex: (form.querySelector('#f-color-hex') as HTMLInputElement)?.value.trim() || undefined,
         brandName: brandEl.value.trim(),
         remainingGrams: Number(gramsEl.value) || 0,
         fullSpoolGrams: Number(fullEl.value) || DEFAULT_FULL_SPOOL_G,
@@ -1203,33 +1355,166 @@ function bind() {
     render()
   })
 
-  app.querySelector('#save-printers')?.addEventListener('click', () => {
-    app.querySelectorAll('[data-printer-idx]').forEach((row) => {
-      const i = Number((row as HTMLElement).dataset.printerIdx)
+  const readPrinterFromRow = (row: Element) => {
+    const name = (row.querySelector('[data-p="name"]') as HTMLInputElement).value.trim()
+    const price = Number((row.querySelector('[data-p="price"]') as HTMLInputElement).value) || 0
+    const lifeHours = Number((row.querySelector('[data-p="lifeHours"]') as HTMLInputElement).value) || 1
+    const serviceCost = Number((row.querySelector('[data-p="serviceCost"]') as HTMLInputElement).value) || 0
+    const energyKwhPerH =
+      Number((row.querySelector('[data-p="energyKwhPerH"]') as HTMLInputElement).value) || 0
+    return { name, price, lifeHours, serviceCost, energyKwhPerH }
+  }
+
+  app.querySelectorAll('[data-save-printer]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const i = Number((btn as HTMLElement).dataset.savePrinter)
+      const row = app.querySelector(`[data-printer-idx="${i}"]`)
       const p = settings.printers[i]
-      if (!p) return
-      p.price = Number((row.querySelector('[data-p="price"]') as HTMLInputElement).value) || 0
-      p.lifeHours = Number((row.querySelector('[data-p="lifeHours"]') as HTMLInputElement).value) || 1
-      p.serviceCost = Number((row.querySelector('[data-p="serviceCost"]') as HTMLInputElement).value) || 0
-      p.energyKwhPerH =
-        Number((row.querySelector('[data-p="energyKwhPerH"]') as HTMLInputElement).value) || 0
+      if (!row || !p) return
+      const vals = readPrinterFromRow(row)
+      if (!vals.name) {
+        showToast('Ime tiskalnika je obvezno')
+        return
+      }
+      Object.assign(p, vals)
+      persistSettings()
+      showToast('Tiskalnik shranjen')
+      render()
+    })
+  })
+
+  app.querySelectorAll('[data-del-printer]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const i = Number((btn as HTMLElement).dataset.delPrinter)
+      if (settings.printers.length <= 1) {
+        showToast('Vsaj en tiskalnik mora ostati')
+        return
+      }
+      if (!confirm('Izbrišem ta tiskalnik?')) return
+      const removed = settings.printers.splice(i, 1)[0]
+      if (calcPrinter === removed?.id) calcPrinter = settings.printers[0]!.id
+      persistSettings()
+      showToast('Tiskalnik izbrisan')
+      render()
+    })
+  })
+
+  app.querySelector('#add-printer')?.addEventListener('click', () => {
+    const name = (app.querySelector('#np-name') as HTMLInputElement).value.trim()
+    if (!name) {
+      showToast('Vnesi ime tiskalnika')
+      return
+    }
+    const price = Number((app.querySelector('#np-price') as HTMLInputElement).value) || 0
+    const lifeHours = Number((app.querySelector('#np-life') as HTMLInputElement).value) || 3000
+    const serviceCost = Number((app.querySelector('#np-service') as HTMLInputElement).value) || 0
+    const energyKwhPerH = Number((app.querySelector('#np-energy') as HTMLInputElement).value) || 0.2
+    settings.printers.push({
+      id: slugId('printer', name),
+      name,
+      price,
+      lifeHours: Math.max(1, lifeHours),
+      serviceCost,
+      energyKwhPerH,
     })
     persistSettings()
-    showToast('Tiskalniki shranjeni')
+    showToast('Tiskalnik dodan')
     render()
   })
 
-  app.querySelector('#save-materials')?.addEventListener('click', () => {
-    app.querySelectorAll('[data-material-idx]').forEach((row) => {
-      const i = Number((row as HTMLElement).dataset.materialIdx)
+  const readMaterialFromRow = (row: Element) => {
+    const name = (row.querySelector('[data-m="name"]') as HTMLInputElement).value.trim()
+    const category = (row.querySelector('[data-m="category"]') as HTMLSelectElement)
+      .value as MaterialCategory
+    let pricePerKg = Number((row.querySelector('[data-m="pricePerKg"]') as HTMLInputElement).value) || 0
+    const spoolPriceRaw = (row.querySelector('[data-m="spoolPrice"]') as HTMLInputElement).value
+    const spoolKgRaw = (row.querySelector('[data-m="spoolKg"]') as HTMLInputElement).value
+    const spoolPrice = spoolPriceRaw === '' ? undefined : Number(spoolPriceRaw)
+    const spoolKg = spoolKgRaw === '' ? undefined : Number(spoolKgRaw)
+    if (
+      spoolPrice != null &&
+      Number.isFinite(spoolPrice) &&
+      spoolKg != null &&
+      Number.isFinite(spoolKg) &&
+      spoolKg > 0
+    ) {
+      pricePerKg = pricePerKgFromSpool(spoolPrice, spoolKg)
+    }
+    return { name, category, pricePerKg, spoolPrice, spoolKg }
+  }
+
+  app.querySelectorAll('[data-save-material]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const i = Number((btn as HTMLElement).dataset.saveMaterial)
+      const row = app.querySelector(`[data-material-idx="${i}"]`)
       const m = settings.materials[i]
-      if (!m) return
-      m.category = (row.querySelector('[data-m="category"]') as HTMLSelectElement)
-        .value as MaterialCategory
-      m.pricePerKg = Number((row.querySelector('[data-m="pricePerKg"]') as HTMLInputElement).value) || 0
+      if (!row || !m) return
+      const vals = readMaterialFromRow(row)
+      if (!vals.name) {
+        showToast('Ime materiala je obvezno')
+        return
+      }
+      m.name = vals.name
+      m.category = vals.category
+      m.pricePerKg = vals.pricePerKg
+      if (vals.spoolPrice != null && Number.isFinite(vals.spoolPrice)) m.spoolPrice = vals.spoolPrice
+      else delete m.spoolPrice
+      if (vals.spoolKg != null && Number.isFinite(vals.spoolKg) && vals.spoolKg > 0) m.spoolKg = vals.spoolKg
+      else delete m.spoolKg
+      persistSettings()
+      showToast('Material shranjen')
+      render()
     })
+  })
+
+  app.querySelectorAll('[data-del-material]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const i = Number((btn as HTMLElement).dataset.delMaterial)
+      if (settings.materials.length <= 1) {
+        showToast('Vsaj en material mora ostati')
+        return
+      }
+      if (!confirm('Izbrišem ta material?')) return
+      const removed = settings.materials.splice(i, 1)[0]
+      if (calcMaterial === removed?.id) calcMaterial = settings.materials[0]!.id
+      persistSettings()
+      showToast('Material izbrisan')
+      render()
+    })
+  })
+
+  app.querySelector('#add-material')?.addEventListener('click', () => {
+    const name = (app.querySelector('#nm-name') as HTMLInputElement).value.trim()
+    if (!name) {
+      showToast('Vnesi ime materiala')
+      return
+    }
+    const category = (app.querySelector('#nm-cat') as HTMLSelectElement).value as MaterialCategory
+    let pricePerKg = Number((app.querySelector('#nm-ppk') as HTMLInputElement).value) || 0
+    const spoolPriceRaw = (app.querySelector('#nm-spool-price') as HTMLInputElement).value
+    const spoolKgRaw = (app.querySelector('#nm-spool-kg') as HTMLInputElement).value
+    const spoolPrice = spoolPriceRaw === '' ? undefined : Number(spoolPriceRaw)
+    const spoolKg = spoolKgRaw === '' ? undefined : Number(spoolKgRaw)
+    if (
+      spoolPrice != null &&
+      Number.isFinite(spoolPrice) &&
+      spoolKg != null &&
+      Number.isFinite(spoolKg) &&
+      spoolKg > 0
+    ) {
+      pricePerKg = pricePerKgFromSpool(spoolPrice, spoolKg)
+    }
+    const mat: MaterialDef = {
+      id: slugId('material', name),
+      name,
+      category,
+      pricePerKg,
+    }
+    if (spoolPrice != null && Number.isFinite(spoolPrice)) mat.spoolPrice = spoolPrice
+    if (spoolKg != null && Number.isFinite(spoolKg) && spoolKg > 0) mat.spoolKg = spoolKg
+    settings.materials.push(mat)
     persistSettings()
-    showToast('Materiali shranjeni')
+    showToast('Material dodan')
     render()
   })
 
@@ -1243,6 +1528,7 @@ function bind() {
     render()
   })
 }
+
 
 window.addEventListener('hashchange', handleHash)
 

@@ -1,4 +1,4 @@
-import type { CatalogColor, MaterialCategory, MaterialDef, PrinterDef, Spool } from './types.ts'
+import type { CatalogColor, MaterialCategory, MaterialDef, PaletteColor, PrinterDef, Spool } from './types.ts'
 import { uid } from './storage.ts'
 
 export const ENERGY_COST = 0.2
@@ -81,6 +81,7 @@ export function seedSpools(): Spool[] {
     {
       material: 'PLA',
       color: 'Črna',
+      colorHex: '#1a1a1a',
       brandName: 'PLASTIKA TRCEK PLA',
       remainingGrams: 780,
       fullSpoolGrams: 1000,
@@ -90,6 +91,7 @@ export function seedSpools(): Spool[] {
     {
       material: 'PLA',
       color: 'Oranžna',
+      colorHex: '#e85d04',
       brandName: 'PRUSAMENT PLA',
       remainingGrams: 920,
       fullSpoolGrams: 1000,
@@ -99,6 +101,7 @@ export function seedSpools(): Spool[] {
     {
       material: 'PLA',
       color: 'Bela',
+      colorHex: '#f5f5f5',
       brandName: 'PRUSAMENT PLA',
       remainingGrams: 450,
       fullSpoolGrams: 1000,
@@ -108,6 +111,7 @@ export function seedSpools(): Spool[] {
     {
       material: 'PETG',
       color: 'Transparentna',
+      colorHex: '#c8dcf0',
       brandName: 'PRUSAMENT PETG',
       remainingGrams: 600,
       fullSpoolGrams: 1000,
@@ -117,6 +121,7 @@ export function seedSpools(): Spool[] {
     {
       material: 'ASA',
       color: 'Siva',
+      colorHex: '#8a8f98',
       brandName: 'PRUSAMENT ASA',
       remainingGrams: 850,
       fullSpoolGrams: 1000,
@@ -235,6 +240,56 @@ export function colorInitial(color: string): string {
   return (t[0] || '?').toUpperCase()
 }
 
+
+export function normalizeColorKey(color: string): string {
+  return color.trim().toLowerCase().normalize('NFD').replace(/\p{M}/gu, '')
+}
+
+/** Primary palette for manual add/edit — Manjka + common Prusa/Bambu. */
+export const COLOR_PALETTE: PaletteColor[] = [
+  { name: 'Črna', hex: '#1a1a1a' },
+  { name: 'Galaxy Black', hex: '#0d0d0d' },
+  { name: 'Jet Black', hex: '#111111' },
+  { name: 'Bela', hex: '#f5f5f5' },
+  { name: 'Pearl White', hex: '#f8f4ec' },
+  { name: 'Natural', hex: '#e8e0d0' },
+  { name: 'Siva', hex: '#8a8f98' },
+  { name: 'Anthracite Grey', hex: '#3b3f46' },
+  { name: 'Silver', hex: '#c0c4cc' },
+  { name: 'Oranžna', hex: '#e85d04' },
+  { name: 'Prusa Orange', hex: '#e85d04' },
+  { name: 'Rdeča', hex: '#c41e3a' },
+  { name: 'Modra', hex: '#1e5aa8' },
+  { name: 'Royal Blue', hex: '#1e5aa8' },
+  { name: 'Sky Blue', hex: '#4fc3f7' },
+  { name: 'Zelena', hex: '#2e7d32' },
+  { name: 'Army Green', hex: '#4b5320' },
+  { name: 'Lime Green', hex: '#a8e10c' },
+  { name: 'Rumena', hex: '#f5c518' },
+  { name: 'Roza', hex: '#e91e8c' },
+  { name: 'Hot Pink', hex: '#ff69b4' },
+  { name: 'Vijolična', hex: '#7b2cbf' },
+  { name: 'Rjava', hex: '#6d4c41' },
+  { name: 'Gold', hex: '#d4a017' },
+  { name: 'Copper', hex: '#b87333' },
+  { name: 'Cyan', hex: '#00bcd4' },
+  { name: 'Magenta', hex: '#d5006d' },
+  { name: 'Transparentna', hex: '#c8dcf0' },
+]
+
+/** Prefer stored hex, else name map / raw hex. */
+export function resolveSpoolColor(color: string, colorHex?: string): string | null {
+  const hex = (colorHex || '').trim()
+  if (/^#([0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i.test(hex)) return hex
+  return colorToCss(color)
+}
+
+export function paletteHexForName(name: string): string | undefined {
+  const key = normalizeColorKey(name)
+  const hit = COLOR_PALETTE.find((c) => normalizeColorKey(c.name) === key)
+  return hit?.hex ?? colorToCss(name) ?? undefined
+}
+
 /**
  * Common Prusa / Bambu Lab colors+materials for the “Manjka” view.
  * Seed colors from seedSpools + sensible defaults.
@@ -272,7 +327,3 @@ export const CATALOG_COLORS: CatalogColor[] = [
   { material: 'ASA', color: 'Oranžna', brandHint: 'Prusament' },
   { material: 'ASA', color: 'Natural', brandHint: 'Prusament' },
 ]
-
-export function normalizeColorKey(color: string): string {
-  return color.trim().toLowerCase().normalize('NFD').replace(/\p{M}/gu, '')
-}

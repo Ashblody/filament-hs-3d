@@ -14,6 +14,8 @@ export interface Spool {
   id: string
   material: MaterialCategory
   color: string
+  /** Hex from palette / OpenPrintTag — preferred for list swatches. */
+  colorHex?: string
   brandName: string
   remainingGrams: number
   fullSpoolGrams: number
@@ -88,4 +90,10 @@ export interface CatalogColor {
   material: MaterialCategory
   color: string
   brandHint: string
+}
+
+/** Palette swatch for manual stock add/edit (name + hex). */
+export interface PaletteColor {
+  name: string
+  hex: string
 }

@@ -6,8 +6,9 @@ import {
   MATERIALS,
   PRINTERS,
 } from './data.ts'
-import type { AppSettings, MaterialDef, PrinterDef } from './types.ts'
+import type { AppSettings, MaterialCategory, MaterialDef, PrinterDef } from './types.ts'
 
+/** Keep compatible with existing installs. */
 const SETTINGS_KEY = 'filament-hs-3d-settings-v1'
 
 export function excelDefaultSettings(): AppSettings {
@@ -47,10 +48,10 @@ export function resetSettings(): AppSettings {
 
 function normalizeSettings(parsed: Partial<AppSettings>, defaults: AppSettings): AppSettings {
   const printers = Array.isArray(parsed.printers)
-    ? parsed.printers.filter(isPrinter).map((p) => ({ ...p }))
+    ? parsed.printers.map(coercePrinter).filter((p): p is PrinterDef => !!p)
     : defaults.printers.map((p) => ({ ...p }))
   const materials = Array.isArray(parsed.materials)
-    ? parsed.materials.filter(isMaterial).map((m) => ({ ...m }))
+    ? parsed.materials.map(coerceMaterial).filter((m): m is MaterialDef => !!m)
     : defaults.materials.map((m) => ({ ...m }))
 
   return {
@@ -69,16 +70,65 @@ function numOr(v: unknown, fallback: number): number {
   return Number.isFinite(n) ? n : fallback
 }
 
-function isPrinter(raw: unknown): raw is PrinterDef {
-  if (!raw || typeof raw !== 'object') return false
+function coercePrinter(raw: unknown): PrinterDef | null {
+  if (!raw || typeof raw !== 'object') return null
   const p = raw as Partial<PrinterDef>
-  return typeof p.id === 'string' && typeof p.name === 'string'
+  if (typeof p.id !== 'string' || typeof p.name !== 'string') return null
+  return {
+    id: p.id,
+    name: p.name,
+    price: numOr(p.price, 0),
+    lifeHours: Math.max(1, numOr(p.lifeHours, 3000)),
+    serviceCost: numOr(p.serviceCost, 0),
+    energyKwhPerH: numOr(p.energyKwhPerH, 0.2),
+  }
 }
 
-function isMaterial(raw: unknown): raw is MaterialDef {
-  if (!raw || typeof raw !== 'object') return false
+function coerceMaterial(raw: unknown): MaterialDef | null {
+  if (!raw || typeof raw !== 'object') return null
   const m = raw as Partial<MaterialDef>
-  return typeof m.id === 'string' && typeof m.name === 'string' && typeof m.category === 'string'
+  if (typeof m.id !== 'string' || typeof m.name !== 'string') return null
+  const category = (typeof m.category === 'string' ? m.category : 'Other') as MaterialCategory
+  const spoolPrice = m.spoolPrice != null ? numOr(m.spoolPrice, NaN) : undefined
+  const spoolKg = m.spoolKg != null ? numOr(m.spoolKg, NaN) : undefined
+  let pricePerKg = numOr(m.pricePerKg, NaN)
+  if (
+    (!Number.isFinite(pricePerKg) || pricePerKg <= 0) &&
+    spoolPrice != null &&
+    Number.isFinite(spoolPrice) &&
+    spoolKg != null &&
+    Number.isFinite(spoolKg) &&
+    spoolKg > 0
+  ) {
+    pricePerKg = spoolPrice / spoolKg
+  }
+  if (!Number.isFinite(pricePerKg)) pricePerKg = 0
+  const out: MaterialDef = { id: m.id, name: m.name, category, pricePerKg }
+  if (spoolPrice != null && Number.isFinite(spoolPrice)) out.spoolPrice = spoolPrice
+  if (spoolKg != null && Number.isFinite(spoolKg) && spoolKg > 0) out.spoolKg = spoolKg
+  return out
+}
+
+/** Id for user-added printers/materials. */
+export function slugId(prefix: string, name: string): string {
+  const base =
+    name
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/\p{M}/gu, '')
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 40) || 'item'
+  const suffix =
+    typeof crypto !== 'undefined' && 'randomUUID' in crypto
+      ? crypto.randomUUID().slice(0, 8)
+      : Date.now().toString(36).slice(-6)
+  return `${prefix}-${base}-${suffix}`
+}
+
+export function pricePerKgFromSpool(spoolPrice: number, spoolKg: number): number {
+  if (!(spoolKg > 0) || !Number.isFinite(spoolPrice)) return 0
+  return spoolPrice / spoolKg
 }
 
 export function findPrinterIn(settings: AppSettings, id: string): PrinterDef {
