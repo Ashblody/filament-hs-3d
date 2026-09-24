@@ -1,7 +1,11 @@
 export type MaterialCategory =
   | 'PLA'
+  | 'PLA+'
   | 'PETG'
+  | 'PCTG'
+  | 'ABS'
   | 'ASA'
+  | 'PC'
   | 'TPU'
   | 'Nylon'
   | 'Woodfill'

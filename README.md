@@ -9,7 +9,7 @@ Mobilna PWA za **Andreja (Ashblody)**: zaloga filamenta, NFC/QR oznake in kalkul
 1. **Zaloga** — kompakten seznam (swatch + tap razširi / dvojni tap uredi), filtri barva/material, pogled **Manjka** (katalog Prusa/Bambu); ročni vnos barve prek **palete** (ime + hex).
 2. **NFC + QR** — branje/pisanje NFC (Chrome Android) in QR kot rezervna pot; Android APK = OpenPrintTag NFC-V.
 3. **Kalkulator** — cena tiska iz nastavljivih stopenj (elektrika, delo, izmet, marža, tiskalniki, materiali).
-4. **Nastavitve** — polni CRUD za tiskalnike in materiale (dodaj/uredi/zbriši), stopnje, gumb *Ponastavi Excel*; zaloga: paleta barv pri ročnem vnosu.
+4. **Nastavitve** — polni CRUD za tiskalnike in materiale (dodaj/uredi/zbriši), stopnje, gumb *Ponastavi Excel*; zaloga: paleta barv pri ročnem vnosu. Ob nalaganju se manjkajoči katalog-materiali združijo po `id` (cene uporabnika ostanejo); *Ponastavi Excel* ponastavi vse na privzete.
 
 ## Namestitev PWA (Add to Home Screen)
 

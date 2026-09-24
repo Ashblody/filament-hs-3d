@@ -820,7 +820,7 @@ function renderSettingsList() {
         <h2>Nastavitve kalkulatorja</h2>
         <button type="button" class="btn btn-ghost btn-sm" id="reset-settings">Ponastavi Excel</button>
       </div>
-      <p class="hint">Vrednosti v localStorage (<code>filament-hs-3d-settings-v1</code>). Kalkulator jih bere tukaj.</p>
+      <p class="hint">Vrednosti v localStorage (<code>filament-hs-3d-settings-v1</code>). Kalkulator jih bere tukaj. Novi katalog materiali se združijo po <code>id</code> (manjkajoči se dodajo, tvoje cene ostanejo). <strong>Ponastavi Excel</strong> zbriše vse in naloži privzete.</p>
       <div class="row">
         <div class="field inline">
           <label for="s-energy">Elektrika (€/kWh)</label>

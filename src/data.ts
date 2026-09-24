@@ -12,8 +12,12 @@ export const APP_PAGES_URL = 'https://ashblody.github.io/filament-hs-3d/'
 
 export const MATERIAL_CATEGORIES: MaterialCategory[] = [
   'PLA',
+  'PLA+',
   'PETG',
+  'PCTG',
+  'ABS',
   'ASA',
+  'PC',
   'TPU',
   'Nylon',
   'Woodfill',
@@ -50,20 +54,27 @@ export const PRINTERS: PrinterDef[] = [
 
 export const MATERIALS: MaterialDef[] = [
   { id: 'trcek-pla', name: 'PLASTIKA TRCEK PLA', category: 'PLA', pricePerKg: 21, spoolPrice: 21, spoolKg: 1 },
-  { id: 'trcek-petg', name: 'PLASTIKA TRCEK PETG', category: 'PETG', pricePerKg: 22, spoolPrice: 22, spoolKg: 1 },
+  { id: 'trcek-pla-plus', name: 'Trček PLA+', category: 'PLA+', pricePerKg: 20, spoolPrice: 20, spoolKg: 1 },
   { id: 'filamentium-pla', name: 'Filamentium PLA Extrafill', category: 'PLA', pricePerKg: 27.5 / 0.75, spoolPrice: 27.5, spoolKg: 0.75 },
   { id: 'prusament-pla', name: 'PRUSAMENT PLA', category: 'PLA', pricePerKg: 32, spoolPrice: 32, spoolKg: 1 },
+  { id: 'trcek-petg', name: 'PLASTIKA TRCEK PETG', category: 'PETG', pricePerKg: 22, spoolPrice: 22, spoolKg: 1 },
   { id: 'prusament-petg', name: 'PRUSAMENT PETG', category: 'PETG', pricePerKg: 32, spoolPrice: 32, spoolKg: 1 },
+  { id: 'petg-cf-prusa', name: 'Prusament PETG CF', category: 'PETG', pricePerKg: 60, spoolPrice: 60, spoolKg: 1 },
+  { id: 'pet-cf-trcek', name: 'Trcek PET CF', category: 'PETG', pricePerKg: 65, spoolPrice: 65, spoolKg: 1 },
+  { id: 'pctg-generic', name: 'PCTG (generic)', category: 'PCTG', pricePerKg: 35, spoolPrice: 35, spoolKg: 1 },
+  { id: 'trcek-abs', name: 'Trček ABS', category: 'ABS', pricePerKg: 18 / 0.7, spoolPrice: 18, spoolKg: 0.7 },
   { id: 'prusament-asa', name: 'PRUSAMENT ASA', category: 'ASA', pricePerKg: 32, spoolPrice: 32, spoolKg: 1 },
+  { id: 'trcek-asa', name: 'Trček ASA', category: 'ASA', pricePerKg: 20 / 0.7, spoolPrice: 20, spoolKg: 0.7 },
+  { id: 'trcek-asa-mix', name: 'Trček ASA MIX', category: 'ASA', pricePerKg: 19 / 0.7, spoolPrice: 19, spoolKg: 0.7 },
+  { id: 'trcek-pc', name: 'Trček PC', category: 'PC', pricePerKg: 48, spoolPrice: 48, spoolKg: 1 },
+  { id: 'pc-blend', name: 'PC Blend Prusa', category: 'PC', pricePerKg: 45 / 0.97, spoolPrice: 45, spoolKg: 0.97 },
   { id: 'tpu-trcek', name: 'TPU Trcek', category: 'TPU', pricePerKg: 27 / 0.7, spoolPrice: 27, spoolKg: 0.7 },
   { id: 'tpu-prusa', name: 'TPU Prusa', category: 'TPU', pricePerKg: 39 / 0.5, spoolPrice: 39, spoolKg: 0.5 },
   { id: 'nylon-trcek', name: 'Nylon Trcek', category: 'Nylon', pricePerKg: 40 / 0.7, spoolPrice: 40, spoolKg: 0.7 },
   { id: 'nylon-prusa', name: 'Nylon Prusa', category: 'Nylon', pricePerKg: 110 / 0.8, spoolPrice: 110, spoolKg: 0.8 },
+  { id: 'trcek-paht-cf', name: 'Trček PAHT CF', category: 'Nylon', pricePerKg: 45, spoolPrice: 45, spoolKg: 1 },
   { id: 'woodfill-prusa', name: 'Woodfill PRUSA', category: 'Woodfill', pricePerKg: 40, spoolPrice: 40, spoolKg: 1 },
   { id: 'woodfill-trcek', name: 'woodfill trcek', category: 'Woodfill', pricePerKg: 24 / 0.7, spoolPrice: 24, spoolKg: 0.7 },
-  { id: 'pc-blend', name: 'PC Blend Prusa', category: 'Other', pricePerKg: 45 / 0.97, spoolPrice: 45, spoolKg: 0.97 },
-  { id: 'petg-cf-prusa', name: 'Prusament PETG CF', category: 'PETG', pricePerKg: 60, spoolPrice: 60, spoolKg: 1 },
-  { id: 'pet-cf-trcek', name: 'Trcek PET CF', category: 'PETG', pricePerKg: 65, spoolPrice: 65, spoolKg: 1 },
   { id: 'resin-generic', name: 'Resin (splošno)', category: 'Resin', pricePerKg: 50, spoolPrice: 50, spoolKg: 1 },
 ]
 
@@ -322,8 +333,26 @@ export const CATALOG_COLORS: CatalogColor[] = [
   { material: 'PETG', color: 'Blue', brandHint: 'Prusa / Bambu' },
   { material: 'PETG', color: 'Red', brandHint: 'Prusa / Bambu' },
   // ASA
-  { material: 'ASA', color: 'Črna', brandHint: 'Prusament' },
-  { material: 'ASA', color: 'Bela', brandHint: 'Prusament' },
+  { material: 'ASA', color: 'Črna', brandHint: 'Prusament / Trček' },
+  { material: 'ASA', color: 'Bela', brandHint: 'Prusament / Trček' },
   { material: 'ASA', color: 'Oranžna', brandHint: 'Prusament' },
   { material: 'ASA', color: 'Natural', brandHint: 'Prusament' },
+  { material: 'ASA', color: 'Siva', brandHint: 'Trček ASA MIX' },
+  // PLA+
+  { material: 'PLA+', color: 'Črna', brandHint: 'Trček' },
+  { material: 'PLA+', color: 'Bela', brandHint: 'Trček' },
+  { material: 'PLA+', color: 'Natural', brandHint: 'Trček' },
+  // ABS
+  { material: 'ABS', color: 'Črna', brandHint: 'Trček' },
+  { material: 'ABS', color: 'Bela', brandHint: 'Trček' },
+  { material: 'ABS', color: 'Natural', brandHint: 'Trček' },
+  // PCTG
+  { material: 'PCTG', color: 'Transparentna', brandHint: 'Bambu / Prusa-style' },
+  { material: 'PCTG', color: 'Črna', brandHint: 'generic' },
+  // PC
+  { material: 'PC', color: 'Natural', brandHint: 'Trček / Prusa' },
+  { material: 'PC', color: 'Črna', brandHint: 'Trček / Prusa' },
+  // Nylon / PA-CF
+  { material: 'Nylon', color: 'Črna', brandHint: 'Trček PAHT CF' },
+  { material: 'Nylon', color: 'Natural', brandHint: 'Trček / Prusa' },
 ]

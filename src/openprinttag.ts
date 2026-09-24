@@ -165,12 +165,18 @@ function rgbaToHex(bytes: Uint8Array): string {
 export function mapOptMaterialToCategory(fields: OpenPrintTagFields): MaterialCategory {
   if (fields.materialClass === 'SLA') return 'Resin'
   const t = (fields.materialTypeAbbrev || '').toUpperCase()
+  const name = (fields.materialName || '').toLowerCase()
+  if (t === 'PLA+' || t === 'PLA PLUS' || name.includes('pla+') || name.includes('pla plus') || name.includes('htpro'))
+    return 'PLA+'
   if (t === 'PLA') return 'PLA'
-  if (t === 'PETG' || t === 'PET' || t === 'PCTG' || t === 'CPE') return 'PETG'
-  if (t === 'ASA' || t === 'ABS') return 'ASA'
+  if (t === 'PCTG') return 'PCTG'
+  if (t === 'PETG' || t === 'PET' || t === 'CPE') return 'PETG'
+  if (t === 'ABS') return 'ABS'
+  if (t === 'ASA') return 'ASA'
+  if (t === 'PC' || t.startsWith('PC ') || name.includes('polycarbonate')) return 'PC'
   if (t === 'TPU' || t === 'TPE' || t === 'TPC') return 'TPU'
   if (t.startsWith('PA') || t === 'NYLON') return 'Nylon'
-  if ((fields.materialName || '').toLowerCase().includes('wood')) return 'Woodfill'
+  if (name.includes('wood')) return 'Woodfill'
   return 'Other'
 }
 

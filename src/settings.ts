@@ -29,7 +29,22 @@ export function loadSettings(): AppSettings {
     const raw = localStorage.getItem(SETTINGS_KEY)
     if (!raw) return defaults
     const parsed = JSON.parse(raw) as Partial<AppSettings>
-    return normalizeSettings(parsed, defaults)
+    const merged = normalizeSettings(parsed, defaults)
+    // Persist merge-missing so new catalog ids survive without wiping custom prices.
+    const beforeIds = new Set(
+      (Array.isArray(parsed.materials) ? parsed.materials : [])
+        .map((m) => (m && typeof m === 'object' && 'id' in m ? String((m as { id: unknown }).id) : ''))
+        .filter(Boolean),
+    )
+    const added = merged.materials.some((m) => !beforeIds.has(m.id))
+    const beforePrinterIds = new Set(
+      (Array.isArray(parsed.printers) ? parsed.printers : [])
+        .map((p) => (p && typeof p === 'object' && 'id' in p ? String((p as { id: unknown }).id) : ''))
+        .filter(Boolean),
+    )
+    const addedPrinters = merged.printers.some((p) => !beforePrinterIds.has(p.id))
+    if (added || addedPrinters) saveSettings(merged)
+    return merged
   } catch {
     return defaults
   }
@@ -46,13 +61,41 @@ export function resetSettings(): AppSettings {
   return defaults
 }
 
+/**
+ * Merge catalog defaults into saved lists by id.
+ * - Keeps user prices / custom rows untouched.
+ * - Appends any new default printer/material ids that are missing
+ *   (so catalog expansions appear without wiping localStorage).
+ * - «Ponastavi Excel» (resetSettings) replaces everything with defaults.
+ */
+function mergeMissingById<T extends { id: string }>(saved: T[], defaults: T[]): T[] {
+  const have = new Set(saved.map((x) => x.id))
+  const out = saved.map((x) => ({ ...x }))
+  for (const d of defaults) {
+    if (!have.has(d.id)) {
+      out.push({ ...d })
+      have.add(d.id)
+    }
+  }
+  return out
+}
+
 function normalizeSettings(parsed: Partial<AppSettings>, defaults: AppSettings): AppSettings {
-  const printers = Array.isArray(parsed.printers)
+  const printersRaw = Array.isArray(parsed.printers)
     ? parsed.printers.map(coercePrinter).filter((p): p is PrinterDef => !!p)
-    : defaults.printers.map((p) => ({ ...p }))
-  const materials = Array.isArray(parsed.materials)
+    : []
+  const materialsRaw = Array.isArray(parsed.materials)
     ? parsed.materials.map(coerceMaterial).filter((m): m is MaterialDef => !!m)
-    : defaults.materials.map((m) => ({ ...m }))
+    : []
+
+  const printers = mergeMissingById(
+    printersRaw.length ? printersRaw : defaults.printers.map((p) => ({ ...p })),
+    defaults.printers,
+  )
+  const materials = mergeMissingById(
+    materialsRaw.length ? materialsRaw : defaults.materials.map((m) => ({ ...m })),
+    defaults.materials,
+  )
 
   return {
     version: 1,
@@ -60,8 +103,8 @@ function normalizeSettings(parsed: Partial<AppSettings>, defaults: AppSettings):
     laborEurPerHour: numOr(parsed.laborEurPerHour, defaults.laborEurPerHour),
     failureRatePct: numOr(parsed.failureRatePct, defaults.failureRatePct),
     defaultMarkup: numOr(parsed.defaultMarkup, defaults.defaultMarkup),
-    printers: printers.length ? printers : defaults.printers.map((p) => ({ ...p })),
-    materials: materials.length ? materials : defaults.materials.map((m) => ({ ...m })),
+    printers,
+    materials,
   }
 }
 

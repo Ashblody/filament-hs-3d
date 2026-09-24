@@ -1,5 +1,5 @@
 /* Filament HS 3D SW — bump CACHE to force phone update */
-const CACHE = 'filament-hs-3d-v1.2.1'
+const CACHE = 'filament-hs-3d-v1.2.2'
 self.addEventListener('install', (event) => {
   self.skipWaiting()
   event.waitUntil(caches.open(CACHE).then((c) => c.addAll([])))
