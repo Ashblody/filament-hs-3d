@@ -76,6 +76,11 @@ let stockView: 'zaloga' | 'manjka' = 'zaloga'
 let expandedId: string | null = null
 let editingId: string | null = null
 let showEditor = false
+/** Settings subviews: list | printer add/edit | material add/edit */
+type SettingsView = 'list' | 'printer' | 'material'
+let settingsView: SettingsView = 'list'
+/** Index into settings.printers / materials when editing; null = add new */
+let settingsEditIdx: number | null = null
 let toastTimer: number | undefined
 let cameraStream: MediaStream | null = null
 let scanLoop = 0
@@ -143,6 +148,23 @@ function closeEditor() {
   if (location.hash.startsWith('#spool/')) {
     history.replaceState(null, '', location.pathname + location.search)
   }
+  render()
+}
+
+
+function renderBackBar(title: string, backId: string): string {
+  return `
+    <div class="subview-bar">
+      <button type="button" class="btn btn-ghost btn-sm back-btn" id="${backId}" aria-label="Nazaj">
+        <span class="back-arrow" aria-hidden="true">←</span> Nazaj
+      </button>
+      <h2 class="subview-title">${title}</h2>
+    </div>`
+}
+
+function leaveSettingsForm() {
+  settingsView = 'list'
+  settingsEditIdx = null
   render()
 }
 
@@ -398,9 +420,11 @@ function renderEditorModal() {
   return `
     <div class="modal-backdrop" id="editor-backdrop">
       <div class="modal" role="dialog" aria-modal="true">
-        <div class="modal-header">
-          <h2>${isNew ? 'Nova tuljava' : 'Uredi tuljavo'}</h2>
-          <button type="button" class="btn btn-ghost btn-sm" id="close-editor">Zapri</button>
+        <div class="modal-header subview-bar">
+          <button type="button" class="btn btn-ghost btn-sm back-btn" id="close-editor" aria-label="Nazaj">
+            <span class="back-arrow" aria-hidden="true">←</span> Nazaj
+          </button>
+          <h2 class="subview-title">${isNew ? 'Nova tuljava' : 'Uredi tuljavo'}</h2>
         </div>
         <form id="spool-form">
           <div class="row">
@@ -784,13 +808,19 @@ function renderKalkulator() {
 }
 
 function renderNastavitve() {
+  if (settingsView === 'printer') return renderPrinterForm()
+  if (settingsView === 'material') return renderMaterialForm()
+  return renderSettingsList()
+}
+
+function renderSettingsList() {
   return `
     <section class="card">
       <div class="row-between">
         <h2>Nastavitve kalkulatorja</h2>
         <button type="button" class="btn btn-ghost btn-sm" id="reset-settings">Ponastavi Excel</button>
       </div>
-      <p class="hint">Vrednosti v localStorage (<code>filament-hs-3d-settings-v1</code>). Kalkulator jih bere tukaj. Ponastavi Excel obnovi privzete — potem lahko znova dodaš svoje.</p>
+      <p class="hint">Vrednosti v localStorage (<code>filament-hs-3d-settings-v1</code>). Kalkulator jih bere tukaj.</p>
       <div class="row">
         <div class="field inline">
           <label for="s-energy">Elektrika (€/kWh)</label>
@@ -814,153 +844,150 @@ function renderNastavitve() {
       <button type="button" class="btn btn-primary btn-block" id="save-rates">Shrani stopnje</button>
     </section>
     <section class="card">
-      <h2>Tiskalniki</h2>
-      <p class="hint">Polja iz lista Naprave: ime, cena €, življenje h, servis €, energija kWh/h.</p>
-      <div class="crud-list">
+      <h2>Tiskalniki in materiali</h2>
+      <div class="settings-add-row">
+        <button type="button" class="btn btn-primary" id="open-add-printer">Dodaj printer</button>
+        <button type="button" class="btn btn-primary" id="open-add-material">Dodaj material</button>
+      </div>
+    </section>
+    <section class="card">
+      <h2>Shranjeni printerji</h2>
+      <p class="hint">Polja: ime, cena €, življenje h, servis €, energija kWh/h.</p>
+      ${
+        settings.printers.length === 0
+          ? `<div class="empty">Ni tiskalnikov.</div>`
+          : `<div class="simple-list">
         ${settings.printers
           .map(
             (p, i) => `
-          <div class="crud-item" data-printer-idx="${i}">
-            <div class="field">
-              <label>Ime</label>
-              <input data-p="name" type="text" value="${escapeHtml(p.name)}" />
+          <div class="simple-row" data-printer-idx="${i}">
+            <div class="simple-main">
+              <div class="title">${escapeHtml(p.name)}</div>
+              <div class="meta">${p.price.toFixed(0)} € · ${p.lifeHours} h · ${p.energyKwhPerH} kWh/h</div>
             </div>
-            <div class="row">
-              <div class="field inline">
-                <label>Cena €</label>
-                <input data-p="price" type="number" min="0" step="1" value="${p.price}" />
-              </div>
-              <div class="field inline">
-                <label>Živ. h</label>
-                <input data-p="lifeHours" type="number" min="1" step="1" value="${p.lifeHours}" />
-              </div>
-            </div>
-            <div class="row">
-              <div class="field inline">
-                <label>Servis €</label>
-                <input data-p="serviceCost" type="number" min="0" step="1" value="${p.serviceCost}" />
-              </div>
-              <div class="field inline">
-                <label>kWh/h</label>
-                <input data-p="energyKwhPerH" type="number" min="0" step="0.01" value="${p.energyKwhPerH}" />
-              </div>
-            </div>
-            <div class="crud-actions">
-              <button type="button" class="btn btn-secondary btn-sm" data-save-printer="${i}">Shrani</button>
+            <div class="simple-actions">
+              <button type="button" class="btn btn-secondary btn-sm" data-edit-printer="${i}">Uredi</button>
               <button type="button" class="btn btn-danger btn-sm" data-del-printer="${i}">Izbriši</button>
             </div>
           </div>`,
           )
           .join('')}
-      </div>
-      <div class="crud-add">
-        <h3>Dodaj tiskalnik</h3>
-        <div class="field">
-          <label for="np-name">Ime</label>
-          <input id="np-name" type="text" placeholder="npr. Bambu X1C" />
-        </div>
-        <div class="row">
-          <div class="field inline">
-            <label for="np-price">Cena €</label>
-            <input id="np-price" type="number" min="0" step="1" value="1000" />
-          </div>
-          <div class="field inline">
-            <label for="np-life">Živ. h</label>
-            <input id="np-life" type="number" min="1" step="1" value="3000" />
-          </div>
-        </div>
-        <div class="row">
-          <div class="field inline">
-            <label for="np-service">Servis €</label>
-            <input id="np-service" type="number" min="0" step="1" value="100" />
-          </div>
-          <div class="field inline">
-            <label for="np-energy">kWh/h</label>
-            <input id="np-energy" type="number" min="0" step="0.01" value="0.2" />
-          </div>
-        </div>
-        <button type="button" class="btn btn-primary btn-block" id="add-printer">Dodaj tiskalnik</button>
-      </div>
+      </div>`
+      }
     </section>
     <section class="card">
-      <h2>Materiali / filamenti</h2>
+      <h2>Shranjeni materiali</h2>
       <p class="hint">€/kg ali cena tuljave + kg → €/kg. Seznam v spustnem meniju kalkulatorja.</p>
-      <div class="crud-list">
+      ${
+        settings.materials.length === 0
+          ? `<div class="empty">Ni materialov.</div>`
+          : `<div class="simple-list">
         ${settings.materials
           .map(
             (m, i) => `
-          <div class="crud-item" data-material-idx="${i}">
-            <div class="field">
-              <label>Ime</label>
-              <input data-m="name" type="text" value="${escapeHtml(m.name)}" />
+          <div class="simple-row" data-material-idx="${i}">
+            <div class="simple-main">
+              <div class="title">${escapeHtml(m.name)}</div>
+              <div class="meta">${escapeHtml(m.category)} · ${m.pricePerKg.toFixed(2)} €/kg</div>
             </div>
-            <div class="row">
-              <div class="field inline">
-                <label>Kategorija</label>
-                <select data-m="category">
-                  ${MATERIAL_CATEGORIES.map(
-                    (c) =>
-                      `<option value="${c}" ${m.category === c ? 'selected' : ''}>${c}</option>`,
-                  ).join('')}
-                </select>
-              </div>
-              <div class="field inline">
-                <label>€/kg</label>
-                <input data-m="pricePerKg" type="number" min="0" step="0.01" value="${Number(m.pricePerKg.toFixed(4))}" />
-              </div>
-            </div>
-            <div class="row">
-              <div class="field inline">
-                <label>Cena tuljave €</label>
-                <input data-m="spoolPrice" type="number" min="0" step="0.01" value="${m.spoolPrice ?? ''}" placeholder="opcijsko" />
-              </div>
-              <div class="field inline">
-                <label>Tuljava kg</label>
-                <input data-m="spoolKg" type="number" min="0" step="0.01" value="${m.spoolKg ?? ''}" placeholder="opcijsko" />
-              </div>
-            </div>
-            <div class="crud-actions">
-              <button type="button" class="btn btn-secondary btn-sm" data-save-material="${i}">Shrani</button>
+            <div class="simple-actions">
+              <button type="button" class="btn btn-secondary btn-sm" data-edit-material="${i}">Uredi</button>
               <button type="button" class="btn btn-danger btn-sm" data-del-material="${i}">Izbriši</button>
             </div>
           </div>`,
           )
           .join('')}
-      </div>
-      <div class="crud-add">
-        <h3>Dodaj material</h3>
-        <div class="field">
-          <label for="nm-name">Ime</label>
-          <input id="nm-name" type="text" placeholder="npr. Bambu PLA Basic" />
-        </div>
-        <div class="row">
-          <div class="field inline">
-            <label for="nm-cat">Kategorija</label>
-            <select id="nm-cat">
-              ${MATERIAL_CATEGORIES.map((c) => `<option value="${c}">${c}</option>`).join('')}
-            </select>
-          </div>
-          <div class="field inline">
-            <label for="nm-ppk">€/kg</label>
-            <input id="nm-ppk" type="number" min="0" step="0.01" value="25" />
-          </div>
-        </div>
-        <div class="row">
-          <div class="field inline">
-            <label for="nm-spool-price">Cena tuljave €</label>
-            <input id="nm-spool-price" type="number" min="0" step="0.01" placeholder="opcijsko" />
-          </div>
-          <div class="field inline">
-            <label for="nm-spool-kg">Tuljava kg</label>
-            <input id="nm-spool-kg" type="number" min="0" step="0.01" placeholder="npr. 1" />
-          </div>
-        </div>
-        <p class="hint">Če vpišeš ceno tuljave + kg, se €/kg izračuna samodejno.</p>
-        <button type="button" class="btn btn-primary btn-block" id="add-material">Dodaj material</button>
-      </div>
+      </div>`
+      }
     </section>
   `
 }
+
+function renderPrinterForm() {
+  const p = settingsEditIdx != null ? settings.printers[settingsEditIdx] : null
+  const isNew = !p
+  const name = p?.name ?? ''
+  const price = p?.price ?? 1000
+  const lifeHours = p?.lifeHours ?? 3000
+  const serviceCost = p?.serviceCost ?? 100
+  const energyKwhPerH = p?.energyKwhPerH ?? 0.2
+  return `
+    <section class="card">
+      ${renderBackBar(isNew ? 'Dodaj printer' : 'Uredi printer', 'settings-back')}
+      <div class="field">
+        <label for="np-name">Ime</label>
+        <input id="np-name" type="text" placeholder="npr. Bambu X1C" value="${escapeHtml(name)}" />
+      </div>
+      <div class="row">
+        <div class="field inline">
+          <label for="np-price">Cena €</label>
+          <input id="np-price" type="number" min="0" step="1" value="${price}" />
+        </div>
+        <div class="field inline">
+          <label for="np-life">Živ. h</label>
+          <input id="np-life" type="number" min="1" step="1" value="${lifeHours}" />
+        </div>
+      </div>
+      <div class="row">
+        <div class="field inline">
+          <label for="np-service">Servis €</label>
+          <input id="np-service" type="number" min="0" step="1" value="${serviceCost}" />
+        </div>
+        <div class="field inline">
+          <label for="np-energy">kWh/h</label>
+          <input id="np-energy" type="number" min="0" step="0.01" value="${energyKwhPerH}" />
+        </div>
+      </div>
+      <button type="button" class="btn btn-primary btn-block" id="save-printer-form">Shrani</button>
+    </section>
+  `
+}
+
+function renderMaterialForm() {
+  const m = settingsEditIdx != null ? settings.materials[settingsEditIdx] : null
+  const isNew = !m
+  const name = m?.name ?? ''
+  const category = m?.category ?? 'PLA'
+  const pricePerKg = m ? Number(m.pricePerKg.toFixed(4)) : 25
+  const spoolPrice = m?.spoolPrice ?? ''
+  const spoolKg = m?.spoolKg ?? ''
+  return `
+    <section class="card">
+      ${renderBackBar(isNew ? 'Dodaj material' : 'Uredi material', 'settings-back')}
+      <div class="field">
+        <label for="nm-name">Ime</label>
+        <input id="nm-name" type="text" placeholder="npr. Bambu PLA Basic" value="${escapeHtml(name)}" />
+      </div>
+      <div class="row">
+        <div class="field inline">
+          <label for="nm-cat">Kategorija</label>
+          <select id="nm-cat">
+            ${MATERIAL_CATEGORIES.map(
+              (c) => `<option value="${c}" ${category === c ? 'selected' : ''}>${c}</option>`,
+            ).join('')}
+          </select>
+        </div>
+        <div class="field inline">
+          <label for="nm-ppk">€/kg</label>
+          <input id="nm-ppk" type="number" min="0" step="0.01" value="${pricePerKg}" />
+        </div>
+      </div>
+      <div class="row">
+        <div class="field inline">
+          <label for="nm-spool-price">Cena tuljave €</label>
+          <input id="nm-spool-price" type="number" min="0" step="0.01" value="${spoolPrice}" placeholder="opcijsko" />
+        </div>
+        <div class="field inline">
+          <label for="nm-spool-kg">Tuljava kg</label>
+          <input id="nm-spool-kg" type="number" min="0" step="0.01" value="${spoolKg}" placeholder="npr. 1" />
+        </div>
+      </div>
+      <p class="hint">Če vpišeš ceno tuljave + kg, se €/kg izračuna samodejno.</p>
+      <button type="button" class="btn btn-primary btn-block" id="save-material-form">Shrani</button>
+    </section>
+  `
+}
+
 
 function render() {
   stopScan()
@@ -982,6 +1009,8 @@ function bind() {
       tab = (btn as HTMLElement).dataset.tab as TabId
       showEditor = false
       editingId = null
+      settingsView = 'list'
+      settingsEditIdx = null
       render()
     })
   })
@@ -1325,6 +1354,8 @@ function bind() {
 
   app.querySelector('#goto-settings')?.addEventListener('click', () => {
     tab = 'nastavitve'
+    settingsView = 'list'
+    settingsEditIdx = null
     render()
   })
 
@@ -1355,36 +1386,41 @@ function bind() {
     render()
   })
 
-  const readPrinterFromRow = (row: Element) => {
-    const name = (row.querySelector('[data-p="name"]') as HTMLInputElement).value.trim()
-    const price = Number((row.querySelector('[data-p="price"]') as HTMLInputElement).value) || 0
-    const lifeHours = Number((row.querySelector('[data-p="lifeHours"]') as HTMLInputElement).value) || 1
-    const serviceCost = Number((row.querySelector('[data-p="serviceCost"]') as HTMLInputElement).value) || 0
-    const energyKwhPerH =
-      Number((row.querySelector('[data-p="energyKwhPerH"]') as HTMLInputElement).value) || 0
-    return { name, price, lifeHours, serviceCost, energyKwhPerH }
-  }
+  app.querySelector('#settings-back')?.addEventListener('click', () => leaveSettingsForm())
 
-  app.querySelectorAll('[data-save-printer]').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const i = Number((btn as HTMLElement).dataset.savePrinter)
-      const row = app.querySelector(`[data-printer-idx="${i}"]`)
-      const p = settings.printers[i]
-      if (!row || !p) return
-      const vals = readPrinterFromRow(row)
-      if (!vals.name) {
-        showToast('Ime tiskalnika je obvezno')
-        return
-      }
-      Object.assign(p, vals)
-      persistSettings()
-      showToast('Tiskalnik shranjen')
+  app.querySelector('#open-add-printer')?.addEventListener('click', () => {
+    settingsView = 'printer'
+    settingsEditIdx = null
+    render()
+  })
+
+  app.querySelector('#open-add-material')?.addEventListener('click', () => {
+    settingsView = 'material'
+    settingsEditIdx = null
+    render()
+  })
+
+  app.querySelectorAll('[data-edit-printer]').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation()
+      settingsView = 'printer'
+      settingsEditIdx = Number((btn as HTMLElement).dataset.editPrinter)
+      render()
+    })
+  })
+
+  app.querySelectorAll('[data-edit-material]').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation()
+      settingsView = 'material'
+      settingsEditIdx = Number((btn as HTMLElement).dataset.editMaterial)
       render()
     })
   })
 
   app.querySelectorAll('[data-del-printer]').forEach((btn) => {
-    btn.addEventListener('click', () => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation()
       const i = Number((btn as HTMLElement).dataset.delPrinter)
       if (settings.printers.length <= 1) {
         showToast('Vsaj en tiskalnik mora ostati')
@@ -1399,76 +1435,9 @@ function bind() {
     })
   })
 
-  app.querySelector('#add-printer')?.addEventListener('click', () => {
-    const name = (app.querySelector('#np-name') as HTMLInputElement).value.trim()
-    if (!name) {
-      showToast('Vnesi ime tiskalnika')
-      return
-    }
-    const price = Number((app.querySelector('#np-price') as HTMLInputElement).value) || 0
-    const lifeHours = Number((app.querySelector('#np-life') as HTMLInputElement).value) || 3000
-    const serviceCost = Number((app.querySelector('#np-service') as HTMLInputElement).value) || 0
-    const energyKwhPerH = Number((app.querySelector('#np-energy') as HTMLInputElement).value) || 0.2
-    settings.printers.push({
-      id: slugId('printer', name),
-      name,
-      price,
-      lifeHours: Math.max(1, lifeHours),
-      serviceCost,
-      energyKwhPerH,
-    })
-    persistSettings()
-    showToast('Tiskalnik dodan')
-    render()
-  })
-
-  const readMaterialFromRow = (row: Element) => {
-    const name = (row.querySelector('[data-m="name"]') as HTMLInputElement).value.trim()
-    const category = (row.querySelector('[data-m="category"]') as HTMLSelectElement)
-      .value as MaterialCategory
-    let pricePerKg = Number((row.querySelector('[data-m="pricePerKg"]') as HTMLInputElement).value) || 0
-    const spoolPriceRaw = (row.querySelector('[data-m="spoolPrice"]') as HTMLInputElement).value
-    const spoolKgRaw = (row.querySelector('[data-m="spoolKg"]') as HTMLInputElement).value
-    const spoolPrice = spoolPriceRaw === '' ? undefined : Number(spoolPriceRaw)
-    const spoolKg = spoolKgRaw === '' ? undefined : Number(spoolKgRaw)
-    if (
-      spoolPrice != null &&
-      Number.isFinite(spoolPrice) &&
-      spoolKg != null &&
-      Number.isFinite(spoolKg) &&
-      spoolKg > 0
-    ) {
-      pricePerKg = pricePerKgFromSpool(spoolPrice, spoolKg)
-    }
-    return { name, category, pricePerKg, spoolPrice, spoolKg }
-  }
-
-  app.querySelectorAll('[data-save-material]').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const i = Number((btn as HTMLElement).dataset.saveMaterial)
-      const row = app.querySelector(`[data-material-idx="${i}"]`)
-      const m = settings.materials[i]
-      if (!row || !m) return
-      const vals = readMaterialFromRow(row)
-      if (!vals.name) {
-        showToast('Ime materiala je obvezno')
-        return
-      }
-      m.name = vals.name
-      m.category = vals.category
-      m.pricePerKg = vals.pricePerKg
-      if (vals.spoolPrice != null && Number.isFinite(vals.spoolPrice)) m.spoolPrice = vals.spoolPrice
-      else delete m.spoolPrice
-      if (vals.spoolKg != null && Number.isFinite(vals.spoolKg) && vals.spoolKg > 0) m.spoolKg = vals.spoolKg
-      else delete m.spoolKg
-      persistSettings()
-      showToast('Material shranjen')
-      render()
-    })
-  })
-
   app.querySelectorAll('[data-del-material]').forEach((btn) => {
-    btn.addEventListener('click', () => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation()
       const i = Number((btn as HTMLElement).dataset.delMaterial)
       if (settings.materials.length <= 1) {
         showToast('Vsaj en material mora ostati')
@@ -1483,7 +1452,35 @@ function bind() {
     })
   })
 
-  app.querySelector('#add-material')?.addEventListener('click', () => {
+  app.querySelector('#save-printer-form')?.addEventListener('click', () => {
+    const name = (app.querySelector('#np-name') as HTMLInputElement).value.trim()
+    if (!name) {
+      showToast('Vnesi ime tiskalnika')
+      return
+    }
+    const price = Number((app.querySelector('#np-price') as HTMLInputElement).value) || 0
+    const lifeHours = Number((app.querySelector('#np-life') as HTMLInputElement).value) || 3000
+    const serviceCost = Number((app.querySelector('#np-service') as HTMLInputElement).value) || 0
+    const energyKwhPerH = Number((app.querySelector('#np-energy') as HTMLInputElement).value) || 0.2
+    const vals = {
+      name,
+      price,
+      lifeHours: Math.max(1, lifeHours),
+      serviceCost,
+      energyKwhPerH,
+    }
+    if (settingsEditIdx != null && settings.printers[settingsEditIdx]) {
+      Object.assign(settings.printers[settingsEditIdx]!, vals)
+      showToast('Tiskalnik shranjen')
+    } else {
+      settings.printers.push({ id: slugId('printer', name), ...vals })
+      showToast('Tiskalnik dodan')
+    }
+    persistSettings()
+    leaveSettingsForm()
+  })
+
+  app.querySelector('#save-material-form')?.addEventListener('click', () => {
     const name = (app.querySelector('#nm-name') as HTMLInputElement).value.trim()
     if (!name) {
       showToast('Vnesi ime materiala')
@@ -1504,18 +1501,30 @@ function bind() {
     ) {
       pricePerKg = pricePerKgFromSpool(spoolPrice, spoolKg)
     }
-    const mat: MaterialDef = {
-      id: slugId('material', name),
-      name,
-      category,
-      pricePerKg,
+    if (settingsEditIdx != null && settings.materials[settingsEditIdx]) {
+      const m = settings.materials[settingsEditIdx]!
+      m.name = name
+      m.category = category
+      m.pricePerKg = pricePerKg
+      if (spoolPrice != null && Number.isFinite(spoolPrice)) m.spoolPrice = spoolPrice
+      else delete m.spoolPrice
+      if (spoolKg != null && Number.isFinite(spoolKg) && spoolKg > 0) m.spoolKg = spoolKg
+      else delete m.spoolKg
+      showToast('Material shranjen')
+    } else {
+      const mat: MaterialDef = {
+        id: slugId('material', name),
+        name,
+        category,
+        pricePerKg,
+      }
+      if (spoolPrice != null && Number.isFinite(spoolPrice)) mat.spoolPrice = spoolPrice
+      if (spoolKg != null && Number.isFinite(spoolKg) && spoolKg > 0) mat.spoolKg = spoolKg
+      settings.materials.push(mat)
+      showToast('Material dodan')
     }
-    if (spoolPrice != null && Number.isFinite(spoolPrice)) mat.spoolPrice = spoolPrice
-    if (spoolKg != null && Number.isFinite(spoolKg) && spoolKg > 0) mat.spoolKg = spoolKg
-    settings.materials.push(mat)
     persistSettings()
-    showToast('Material dodan')
-    render()
+    leaveSettingsForm()
   })
 
   app.querySelector('#reset-settings')?.addEventListener('click', () => {
@@ -1524,9 +1533,12 @@ function bind() {
     calcMarkup = String(settings.defaultMarkup)
     calcFailure = String(settings.failureRatePct)
     calcPrinter = settings.printers[0]?.id ?? calcPrinter
+    settingsView = 'list'
+    settingsEditIdx = null
     showToast('Ponastavljeno na Excel')
     render()
   })
+
 }
 
 

@@ -637,32 +637,75 @@ button {
   user-select: none;
 }
 
-/* —— Nastavitve CRUD —— */
-.crud-list {
+/* —— Subview back bar (settings forms, spool editor) —— */
+.subview-bar {
   display: flex;
-  flex-direction: column;
+  align-items: center;
   gap: 10px;
   margin-bottom: 12px;
 }
-.crud-item {
+.subview-bar .back-btn {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding-left: 8px;
+  padding-right: 10px;
+}
+.subview-bar .back-arrow {
+  font-size: 1.05em;
+  line-height: 1;
+}
+.subview-title {
+  margin: 0;
+  font-size: 1rem;
+  flex: 1;
+  min-width: 0;
+}
+.modal-header.subview-bar {
+  justify-content: flex-start;
+}
+
+/* —— Nastavitve lists —— */
+.settings-add-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.settings-add-row .btn {
+  flex: 1 1 140px;
+}
+.simple-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.simple-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: var(--radius);
   padding: 10px;
 }
-.crud-actions {
+.simple-main {
+  flex: 1;
+  min-width: 0;
+}
+.simple-main .title {
+  font-weight: 600;
+  font-size: 0.92rem;
+}
+.simple-main .meta {
+  font-size: 0.78rem;
+  color: var(--muted);
+  margin-top: 2px;
+}
+.simple-actions {
   display: flex;
-  gap: 8px;
-  margin-top: 8px;
-}
-.crud-add {
-  border-top: 1px dashed var(--line);
-  padding-top: 12px;
-  margin-top: 4px;
-}
-.crud-add h3 {
-  margin: 0 0 8px;
-  font-size: 0.9rem;
+  flex-shrink: 0;
+  gap: 6px;
 }
 .btn-danger {
   background: var(--danger-soft);
