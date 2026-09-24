@@ -1,18 +1,17 @@
 import './style.css'
 import {
   APP_PAGES_URL,
-  DEFAULT_FAILURE_RATE,
+  CATALOG_COLORS,
   DEFAULT_FULL_SPOOL_G,
-  DEFAULT_MARKUP,
   DEFAULT_POST_MIN,
   DEFAULT_PREP_MIN,
   MATERIAL_CATEGORIES,
-  MATERIALS,
-  PRINTERS,
-  findMaterial,
+  colorInitial,
+  colorToCss,
   formatEuro,
   formatGrams,
   gramsFromPercent,
+  normalizeColorKey,
   parsePrintHours,
   percentFromGrams,
 } from './data.ts'
@@ -38,6 +37,12 @@ import {
   stopCamera,
 } from './qr.ts'
 import {
+  findMaterialIn,
+  loadSettings,
+  resetSettings,
+  saveSettings,
+} from './settings.ts'
+import {
   escapeHtml,
   formatDateTime,
   loadData,
@@ -45,33 +50,50 @@ import {
   saveData,
   uid,
 } from './storage.ts'
-import type { AppData, MaterialCategory, Spool, TabId } from './types.ts'
+import type {
+  AppData,
+  AppSettings,
+  CatalogColor,
+  MaterialCategory,
+  Spool,
+  TabId,
+} from './types.ts'
 
 const app = document.querySelector<HTMLDivElement>('#app')!
 
 let data: AppData = loadData()
+let settings: AppSettings = loadSettings()
 let tab: TabId = 'zaloga'
 let materialFilter: MaterialCategory | 'vse' = 'vse'
+let colorFilter: string | 'vse' = 'vse'
+let stockView: 'zaloga' | 'manjka' = 'zaloga'
+let expandedId: string | null = null
 let editingId: string | null = null
 let showEditor = false
 let toastTimer: number | undefined
 let cameraStream: MediaStream | null = null
 let scanLoop = 0
 let nfcAbort: AbortController | null = null
+let clickTimer: number | undefined
+let pendingClickId: string | null = null
 
-// Calculator state
-let calcPrinter = PRINTERS[0]!.id
+// Calculator state — defaults from settings
+let calcPrinter = settings.printers[0]?.id ?? 'core-one-indx'
 let calcMaterial = 'trcek-pla'
 let calcWeight = '61.46'
 let calcTime = '3:46'
 let calcPrep = String(DEFAULT_PREP_MIN)
 let calcPost = String(DEFAULT_POST_MIN)
 let calcConsumables = '0'
-let calcMarkup = String(DEFAULT_MARKUP)
-let calcFailure = String(DEFAULT_FAILURE_RATE)
+let calcMarkup = String(settings.defaultMarkup)
+let calcFailure = String(settings.failureRatePct)
 
 function persist() {
   saveData(data)
+}
+
+function persistSettings() {
+  saveSettings(settings)
 }
 
 function showToast(msg: string) {
@@ -102,6 +124,7 @@ function openSpool(id: string) {
   editingId = id
   showEditor = true
   tab = 'zaloga'
+  stockView = 'zaloga'
   if (location.hash !== `#spool/${id}`) {
     history.replaceState(null, '', `#spool/${id}`)
   }
@@ -129,7 +152,7 @@ function summaryByMaterial(): Array<{ material: string; colors: number; count: n
   const map = new Map<string, { colors: Set<string>; count: number; grams: number }>()
   for (const s of data.spools) {
     const entry = map.get(s.material) ?? { colors: new Set(), count: 0, grams: 0 }
-    entry.colors.add(s.color.trim().toLowerCase() || '?')
+    entry.colors.add(normalizeColorKey(s.color) || '?')
     entry.count += 1
     entry.grams += s.remainingGrams
     map.set(s.material, entry)
@@ -144,28 +167,78 @@ function summaryByMaterial(): Array<{ material: string; colors: number; count: n
     .sort((a, b) => a.material.localeCompare(b.material, 'sl'))
 }
 
+function uniqueStockColors(): string[] {
+  const map = new Map<string, string>()
+  for (const s of data.spools) {
+    const key = normalizeColorKey(s.color)
+    if (!key) continue
+    if (!map.has(key)) map.set(key, s.color.trim())
+  }
+  return [...map.values()].sort((a, b) => a.localeCompare(b, 'sl'))
+}
+
 function filteredSpools(): Spool[] {
   let list = [...data.spools]
   if (materialFilter !== 'vse') {
     list = list.filter((s) => s.material === materialFilter)
   }
-  return list.sort((a, b) => a.material.localeCompare(b.material, 'sl') || a.color.localeCompare(b.color, 'sl'))
+  if (colorFilter !== 'vse') {
+    const key = normalizeColorKey(colorFilter)
+    list = list.filter((s) => normalizeColorKey(s.color) === key)
+  }
+  return list.sort(
+    (a, b) =>
+      a.material.localeCompare(b.material, 'sl') || a.color.localeCompare(b.color, 'sl'),
+  )
+}
+
+function missingCatalog(): CatalogColor[] {
+  const owned = new Set(
+    data.spools.map((s) => `${s.material}|${normalizeColorKey(s.color)}`),
+  )
+  return CATALOG_COLORS.filter((c) => {
+    if (materialFilter !== 'vse' && c.material !== materialFilter) return false
+    if (colorFilter !== 'vse' && normalizeColorKey(c.color) !== normalizeColorKey(colorFilter)) {
+      return false
+    }
+    return !owned.has(`${c.material}|${normalizeColorKey(c.color)}`)
+  })
 }
 
 function emptySpool(): Spool {
   const now = new Date().toISOString()
+  const defMat = settings.materials.find((m) => m.id === 'trcek-pla') ?? settings.materials[0]
   return {
     id: uid('spool'),
-    material: 'PLA',
+    material: defMat?.category ?? 'PLA',
     color: '',
-    brandName: 'PLASTIKA TRCEK PLA',
+    brandName: defMat?.name ?? 'PLASTIKA TRCEK PLA',
     remainingGrams: DEFAULT_FULL_SPOOL_G,
     fullSpoolGrams: DEFAULT_FULL_SPOOL_G,
-    pricePerKg: 21,
+    pricePerKg: defMat?.pricePerKg ?? 21,
     notes: '',
     createdAt: now,
     updatedAt: now,
   }
+}
+
+function renderSwatch(color: string): string {
+  const css = colorToCss(color)
+  if (!css) {
+    return `<span class="spool-swatch unknown" title="${escapeHtml(color || '?')}">${escapeHtml(colorInitial(color))}</span>`
+  }
+  const light = isLightColor(css)
+  return `<span class="spool-swatch${light ? ' light-fg' : ''}" style="background:${escapeHtml(css)}" title="${escapeHtml(color)}"></span>`
+}
+
+function isLightColor(css: string): boolean {
+  const hex = css.match(/^#([0-9a-f]{6})$/i)
+  if (!hex?.[1]) return /rgba?\([^)]+,\s*0?\.[0-4]/.test(css) || css.includes('f5f5f5') || css.includes('fffff')
+  const n = parseInt(hex[1], 16)
+  const r = (n >> 16) & 255
+  const g = (n >> 8) & 255
+  const b = n & 255
+  return (r * 299 + g * 587 + b * 114) / 1000 > 160
 }
 
 function renderHeader() {
@@ -173,7 +246,7 @@ function renderHeader() {
     <header class="app-header">
       <div>
         <h1>Filament / HS 3D</h1>
-        <div class="sub">Zaloga · NFC/QR · Kalkulator</div>
+        <div class="sub">Zaloga · NFC/QR · Kalkulator · Nastavitve</div>
       </div>
     </header>
   `
@@ -184,6 +257,7 @@ function renderTabs() {
     { id: 'zaloga', label: 'Zaloga', ico: '🧵' },
     { id: 'nfc', label: 'NFC', ico: '📲' },
     { id: 'kalkulator', label: 'Kalkulator', ico: '🧮' },
+    { id: 'nastavitve', label: 'Nastavitve', ico: '⚙️' },
   ]
   return `
     <nav class="tab-nav" aria-label="Glavni zavihki">
@@ -202,56 +276,112 @@ function renderTabs() {
 
 function renderZaloga() {
   const summary = summaryByMaterial()
+  const colors = uniqueStockColors()
   const list = filteredSpools()
+  const missing = missingCatalog()
+
   return `
     <section class="card">
       <div class="row-between">
         <h2>Zaloga tuljav</h2>
         <button type="button" class="btn btn-primary btn-sm" id="add-spool">+ Nova</button>
       </div>
-      <p class="hint">Podatki so shranjeni lokalno na telefonu (localStorage).</p>
+      <div class="view-toggle" role="tablist">
+        <button type="button" data-stock-view="zaloga" class="${stockView === 'zaloga' ? 'active' : ''}">Zaloga</button>
+        <button type="button" data-stock-view="manjka" class="${stockView === 'manjka' ? 'active' : ''}">Manjka (${missing.length})</button>
+      </div>
+      <p class="hint">Tap = razširi · dvojni tap = uredi. Lokalno v localStorage.</p>
       <div class="summary-chips">
-        <button type="button" class="chip ${materialFilter === 'vse' ? 'active' : ''}" data-filter="vse">
-          Vse (${data.spools.length})
+        <button type="button" class="chip ${materialFilter === 'vse' ? 'active' : ''}" data-filter-mat="vse">
+          Material: vse
         </button>
         ${summary
           .map(
             (s) => `
-          <button type="button" class="chip ${materialFilter === s.material ? 'active' : ''}" data-filter="${escapeHtml(s.material)}">
-            ${escapeHtml(s.material)}: ${s.colors} barv · ${s.count}× · ${formatGrams(s.grams)}
+          <button type="button" class="chip ${materialFilter === s.material ? 'active' : ''}" data-filter-mat="${escapeHtml(s.material)}">
+            ${escapeHtml(s.material)} · ${s.count}×
           </button>`,
           )
           .join('')}
       </div>
+      <div class="summary-chips">
+        <button type="button" class="chip ${colorFilter === 'vse' ? 'active' : ''}" data-filter-color="vse">
+          Barva: vse
+        </button>
+        ${colors
+          .map((c) => {
+            const css = colorToCss(c)
+            const sw = css
+              ? `<span class="mini-swatch" style="background:${escapeHtml(css)}"></span>`
+              : `<span class="mini-swatch" style="background:var(--surface-3)"></span>`
+            return `
+          <button type="button" class="chip ${colorFilter === c ? 'active' : ''}" data-filter-color="${escapeHtml(c)}">
+            ${sw}${escapeHtml(c)}
+          </button>`
+          })
+          .join('')}
+      </div>
       ${
-        list.length === 0
-          ? `<div class="empty">Ni tuljav. Dodaj novo ali počisti filter.</div>`
-          : `<div class="spool-list">
-          ${list
-            .map((s) => {
-              const pct = percentFromGrams(s.remainingGrams, s.fullSpoolGrams || DEFAULT_FULL_SPOOL_G)
-              return `
-              <button type="button" class="spool-item" data-open="${escapeHtml(s.id)}">
-                <div>
-                  <div class="title">${escapeHtml(s.material)} · ${escapeHtml(s.color || 'brez barve')}</div>
-                  <div class="meta">${escapeHtml(s.brandName)} · ${s.pricePerKg.toFixed(2)} €/kg${s.nfcTagId ? ' · NFC' : ''}</div>
-                  <div class="bar"><span style="width:${pct.toFixed(0)}%"></span></div>
-                </div>
-                <div class="amt">${formatGrams(s.remainingGrams)}<br><span style="font-size:0.75rem;font-weight:600;color:var(--muted)">${pct.toFixed(0)} %</span></div>
-              </button>`
-            })
-            .join('')}
+        stockView === 'manjka'
+          ? renderManjka(missing)
+          : list.length === 0
+            ? `<div class="empty">Ni tuljav. Dodaj novo ali počisti filter.</div>`
+            : `<div class="spool-list">
+          ${list.map((s) => renderSpoolRow(s)).join('')}
         </div>`
       }
     </section>
   `
 }
 
+function renderSpoolRow(s: Spool): string {
+  const pct = percentFromGrams(s.remainingGrams, s.fullSpoolGrams || DEFAULT_FULL_SPOOL_G)
+  const expanded = expandedId === s.id
+  return `
+    <div class="spool-item${expanded ? ' expanded' : ''}" data-spool-id="${escapeHtml(s.id)}" role="button" tabindex="0">
+      <div class="spool-row">
+        ${renderSwatch(s.color)}
+        <div class="spool-main">
+          <div class="title">${escapeHtml(s.color || 'brez barve')} · ${escapeHtml(s.material)}</div>
+          <div class="basics">${escapeHtml(s.brandName)}${s.nfcTagId ? ' · NFC' : ''}</div>
+        </div>
+        <div class="spool-amt">${formatGrams(s.remainingGrams)}<span class="pct">${pct.toFixed(0)} %</span></div>
+      </div>
+      <div class="spool-details">
+        <div class="meta-line">${s.pricePerKg.toFixed(2)} €/kg · polna ${formatGrams(s.fullSpoolGrams || DEFAULT_FULL_SPOOL_G)}</div>
+        ${s.notes ? `<div class="meta-line">${escapeHtml(s.notes)}</div>` : ''}
+        <div class="bar"><span style="width:${pct.toFixed(0)}%"></span></div>
+        <div class="edit-hint">Dvojni tap za urejanje parametrov</div>
+      </div>
+    </div>`
+}
+
+function renderManjka(missing: CatalogColor[]): string {
+  if (missing.length === 0) {
+    return `<div class="empty">Vse barve iz kataloga so v zalogi. 🎉</div>`
+  }
+  return `
+    <p class="hint">Barve/materiali iz kataloga Prusa/Bambu, ki jih še nimaš.</p>
+    <div class="manjka-list">
+      ${missing
+        .map(
+          (c) => `
+        <button type="button" class="manjka-item" data-add-missing="${escapeHtml(c.material)}|${escapeHtml(c.color)}|${escapeHtml(c.brandHint)}">
+          ${renderSwatch(c.color)}
+          <div>
+            <div class="title">${escapeHtml(c.color)} · ${escapeHtml(c.material)}</div>
+            <div class="meta">${escapeHtml(c.brandHint)}</div>
+          </div>
+          <span class="tag">Manjka</span>
+        </button>`,
+        )
+        .join('')}
+    </div>`
+}
+
 function renderEditorModal() {
   if (!showEditor) return ''
-  const spool = editingId
-    ? data.spools.find((s) => s.id === editingId)
-    : null
+  const spool = editingId ? data.spools.find((s) => s.id === editingId) : null
   const s = spool ?? emptySpool()
   const isNew = !spool
   const pct = percentFromGrams(s.remainingGrams, s.fullSpoolGrams || DEFAULT_FULL_SPOOL_G)
@@ -284,7 +414,7 @@ function renderEditorModal() {
             <label for="f-brand">Znamka / ime</label>
             <input id="f-brand" name="brandName" list="material-names" value="${escapeHtml(s.brandName)}" placeholder="PLASTIKA TRCEK PLA" />
             <datalist id="material-names">
-              ${MATERIALS.map((m) => `<option value="${escapeHtml(m.name)}"></option>`).join('')}
+              ${settings.materials.map((m) => `<option value="${escapeHtml(m.name)}"></option>`).join('')}
             </datalist>
           </div>
           <div class="row">
@@ -330,7 +460,7 @@ function renderEditorModal() {
             <h3>QR / NFC</h3>
             <div class="qr-box">
               <canvas id="spool-qr" width="220" height="220"></canvas>
-              <code style="font-size:0.7rem;word-break:break-all">${escapeHtml(link)}</code>
+              <code style="font-size:0.7rem;word-break:break-all;color:#333">${escapeHtml(link)}</code>
               <button type="button" class="btn btn-ghost btn-sm no-print" id="print-qr">Natisni QR</button>
             </div>
             ${
@@ -346,7 +476,6 @@ function renderEditorModal() {
     </div>
   `
 }
-
 
 function handleNfcReadResult(result: NfcReadResult, statusEl: Element | null) {
   if (statusEl) statusEl.textContent = result.summary
@@ -508,7 +637,7 @@ function renderNfc() {
     </section>
     <section class="card">
       <h2>Kako zapisati našo NFC oznako</h2>
-      <ol style="margin:0;padding-left:1.2rem;font-size:0.9rem;color:var(--muted)">
+      <ol style="margin:0;padding-left:1.2rem;font-size:0.86rem;color:var(--muted)">
         <li>Uporabi prazno <strong>NTAG213/215/216</strong> (ne Prusament SLIX2).</li>
         <li>Odpri tuljavo v zavihku Zaloga.</li>
         <li>Tapni <strong>Zapiši NFC</strong> (Chrome Android).</li>
@@ -520,39 +649,46 @@ function renderNfc() {
 
 function renderKalkulator() {
   const hours = parsePrintHours(calcTime)
-  const result = calculatePrice({
-    printerId: calcPrinter,
-    materialId: calcMaterial,
-    weightG: Number(calcWeight) || 0,
-    printHours: hours,
-    prepMin: Number(calcPrep) || 0,
-    postMin: Number(calcPost) || 0,
-    consumables: Number(calcConsumables) || 0,
-    markup: Number(calcMarkup) || DEFAULT_MARKUP,
-    failureRate: Number(calcFailure) || 0,
-  })
-  const mat = findMaterial(calcMaterial)
+  const result = calculatePrice(
+    {
+      printerId: calcPrinter,
+      materialId: calcMaterial,
+      weightG: Number(calcWeight) || 0,
+      printHours: hours,
+      prepMin: Number(calcPrep) || 0,
+      postMin: Number(calcPost) || 0,
+      consumables: Number(calcConsumables) || 0,
+      markup: Number(calcMarkup) || settings.defaultMarkup,
+      failureRate: Number(calcFailure) || 0,
+    },
+    settings,
+  )
+  const mat = findMaterialIn(settings, calcMaterial)
 
   return `
     <section class="card">
       <h2>Kalkulator 3D tiska</h2>
-      <p class="hint">Formule iz HS Pricing Sheet. Energija 0,20 €/kWh · delo 20 €/h.</p>
+      <p class="hint">Formule iz HS Pricing Sheet. Energija ${settings.electricityEurPerKwh.toFixed(2)} €/kWh · delo ${settings.laborEurPerHour.toFixed(0)} €/h · <button type="button" class="btn btn-ghost btn-sm" id="goto-settings" style="display:inline;min-height:auto;padding:2px 6px">Nastavitve</button></p>
       <div class="field">
         <label for="c-printer">Tiskalnik</label>
         <select id="c-printer">
-          ${PRINTERS.map(
-            (p) =>
-              `<option value="${p.id}" ${calcPrinter === p.id ? 'selected' : ''}>${escapeHtml(p.name)}</option>`,
-          ).join('')}
+          ${settings.printers
+            .map(
+              (p) =>
+                `<option value="${p.id}" ${calcPrinter === p.id ? 'selected' : ''}>${escapeHtml(p.name)}</option>`,
+            )
+            .join('')}
         </select>
       </div>
       <div class="field">
         <label for="c-material">Filament</label>
         <select id="c-material">
-          ${MATERIALS.map(
-            (m) =>
-              `<option value="${m.id}" ${calcMaterial === m.id ? 'selected' : ''}>${escapeHtml(m.name)} (${m.pricePerKg.toFixed(2)} €/kg)</option>`,
-          ).join('')}
+          ${settings.materials
+            .map(
+              (m) =>
+                `<option value="${m.id}" ${calcMaterial === m.id ? 'selected' : ''}>${escapeHtml(m.name)} (${m.pricePerKg.toFixed(2)} €/kg)</option>`,
+            )
+            .join('')}
         </select>
       </div>
       <div class="row">
@@ -613,13 +749,113 @@ function renderKalkulator() {
   `
 }
 
+function renderNastavitve() {
+  return `
+    <section class="card">
+      <div class="row-between">
+        <h2>Nastavitve kalkulatorja</h2>
+        <button type="button" class="btn btn-ghost btn-sm" id="reset-settings">Ponastavi Excel</button>
+      </div>
+      <p class="hint">Vrednosti se shranijo v localStorage. Kalkulator jih bere tukaj.</p>
+      <div class="row">
+        <div class="field inline">
+          <label for="s-energy">Elektrika (€/kWh)</label>
+          <input id="s-energy" type="number" min="0" step="0.01" value="${settings.electricityEurPerKwh}" />
+        </div>
+        <div class="field inline">
+          <label for="s-labor">Delo (€/h)</label>
+          <input id="s-labor" type="number" min="0" step="0.5" value="${settings.laborEurPerHour}" />
+        </div>
+      </div>
+      <div class="row">
+        <div class="field inline">
+          <label for="s-fail">Privzeti izmet (%)</label>
+          <input id="s-fail" type="number" min="0" step="1" value="${settings.failureRatePct}" />
+        </div>
+        <div class="field inline">
+          <label for="s-markup">Privzeta marža (×)</label>
+          <input id="s-markup" type="number" min="0.1" step="0.1" value="${settings.defaultMarkup}" />
+        </div>
+      </div>
+      <button type="button" class="btn btn-primary btn-block" id="save-rates">Shrani stopnje</button>
+    </section>
+    <section class="card">
+      <h2>Tiskalniki</h2>
+      <p class="hint">Cena / življenje (h) / servis / energija (kWh/h)</p>
+      <table class="settings-table">
+        <thead>
+          <tr>
+            <th>Ime</th>
+            <th>Cena €</th>
+            <th>Živ. h</th>
+            <th>Servis</th>
+            <th>kWh/h</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${settings.printers
+            .map(
+              (p, i) => `
+            <tr data-printer-idx="${i}">
+              <td class="name-cell" title="${escapeHtml(p.name)}">${escapeHtml(p.name)}</td>
+              <td><input data-p="price" type="number" min="0" step="1" value="${p.price}" /></td>
+              <td><input data-p="lifeHours" type="number" min="1" step="1" value="${p.lifeHours}" /></td>
+              <td><input data-p="serviceCost" type="number" min="0" step="1" value="${p.serviceCost}" /></td>
+              <td><input data-p="energyKwhPerH" type="number" min="0" step="0.01" value="${p.energyKwhPerH}" /></td>
+            </tr>`,
+            )
+            .join('')}
+        </tbody>
+      </table>
+      <button type="button" class="btn btn-secondary btn-block" id="save-printers">Shrani tiskalnike</button>
+    </section>
+    <section class="card">
+      <h2>Materiali (€/kg)</h2>
+      <p class="hint">Seznam, ki ga uporablja kalkulator.</p>
+      <table class="settings-table">
+        <thead>
+          <tr>
+            <th>Ime</th>
+            <th>Kat.</th>
+            <th>€/kg</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${settings.materials
+            .map(
+              (m, i) => `
+            <tr data-material-idx="${i}">
+              <td class="name-cell" title="${escapeHtml(m.name)}">${escapeHtml(m.name)}</td>
+              <td>
+                <select data-m="category">
+                  ${MATERIAL_CATEGORIES.map(
+                    (c) =>
+                      `<option value="${c}" ${m.category === c ? 'selected' : ''}>${c}</option>`,
+                  ).join('')}
+                </select>
+              </td>
+              <td><input data-m="pricePerKg" type="number" min="0" step="0.01" value="${Number(m.pricePerKg.toFixed(4))}" /></td>
+            </tr>`,
+            )
+            .join('')}
+        </tbody>
+      </table>
+      <button type="button" class="btn btn-secondary btn-block" id="save-materials">Shrani materiale</button>
+    </section>
+  `
+}
+
 function render() {
   stopScan()
-  app.innerHTML =
-    renderHeader() +
-    (tab === 'zaloga' ? renderZaloga() : tab === 'nfc' ? renderNfc() : renderKalkulator()) +
-    renderTabs() +
-    renderEditorModal()
+  const body =
+    tab === 'zaloga'
+      ? renderZaloga()
+      : tab === 'nfc'
+        ? renderNfc()
+        : tab === 'kalkulator'
+          ? renderKalkulator()
+          : renderNastavitve()
+  app.innerHTML = renderHeader() + body + renderTabs() + renderEditorModal()
   bind()
 }
 
@@ -633,17 +869,83 @@ function bind() {
     })
   })
 
-  app.querySelectorAll('[data-filter]').forEach((btn) => {
+  app.querySelectorAll('[data-stock-view]').forEach((btn) => {
     btn.addEventListener('click', () => {
-      const f = (btn as HTMLElement).dataset.filter!
+      stockView = (btn as HTMLElement).dataset.stockView as 'zaloga' | 'manjka'
+      render()
+    })
+  })
+
+  app.querySelectorAll('[data-filter-mat]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const f = (btn as HTMLElement).dataset.filterMat!
       materialFilter = f === 'vse' ? 'vse' : (f as MaterialCategory)
       render()
     })
   })
 
-  app.querySelectorAll('[data-open]').forEach((btn) => {
+  app.querySelectorAll('[data-filter-color]').forEach((btn) => {
     btn.addEventListener('click', () => {
-      openSpool((btn as HTMLElement).dataset.open!)
+      const f = (btn as HTMLElement).dataset.filterColor!
+      colorFilter = f === 'vse' ? 'vse' : f
+      render()
+    })
+  })
+
+  app.querySelectorAll('[data-spool-id]').forEach((el) => {
+    const id = (el as HTMLElement).dataset.spoolId!
+    el.addEventListener('click', (e) => {
+      e.preventDefault()
+      if (pendingClickId === id && clickTimer) {
+        window.clearTimeout(clickTimer)
+        clickTimer = undefined
+        pendingClickId = null
+        openSpool(id)
+        return
+      }
+      pendingClickId = id
+      window.clearTimeout(clickTimer)
+      clickTimer = window.setTimeout(() => {
+        clickTimer = undefined
+        pendingClickId = null
+        expandedId = expandedId === id ? null : id
+        render()
+      }, 280)
+    })
+    el.addEventListener('dblclick', (e) => {
+      e.preventDefault()
+      window.clearTimeout(clickTimer)
+      clickTimer = undefined
+      pendingClickId = null
+      openSpool(id)
+    })
+  })
+
+  app.querySelectorAll('[data-add-missing]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const raw = (btn as HTMLElement).dataset.addMissing!
+      const [material, color, brandHint] = raw.split('|')
+      const now = new Date().toISOString()
+      const matchMat = settings.materials.find((m) => m.category === material)
+      const spool: Spool = {
+        id: uid('spool'),
+        material: (material as MaterialCategory) || 'PLA',
+        color: color || '',
+        brandName: matchMat?.name || brandHint || material || '',
+        remainingGrams: DEFAULT_FULL_SPOOL_G,
+        fullSpoolGrams: DEFAULT_FULL_SPOOL_G,
+        pricePerKg: matchMat?.pricePerKg ?? 0,
+        notes: `Dodano iz Manjka (${brandHint || ''})`,
+        createdAt: now,
+        updatedAt: now,
+      }
+      data.spools.unshift(spool)
+      persist()
+      editingId = spool.id
+      showEditor = true
+      stockView = 'zaloga'
+      showToast('Dodano — uredi parametre')
+      render()
     })
   })
 
@@ -679,7 +981,7 @@ function bind() {
       percentEl.value = String(Math.round(percentFromGrams(Number(gramsEl.value) || 0, full)))
     })
     brandEl.addEventListener('change', () => {
-      const match = MATERIALS.find((m) => m.name === brandEl.value)
+      const match = settings.materials.find((m) => m.name === brandEl.value)
       if (match) {
         priceEl.value = String(Number(match.pricePerKg.toFixed(4)))
         const matSelect = form.querySelector<HTMLSelectElement>('#f-material')!
@@ -753,7 +1055,6 @@ function bind() {
     })
   }
 
-  // NFC tab — scan must start from this button tap (user gesture)
   app.querySelector('#nfc-read')?.addEventListener('click', async () => {
     const statusEl = app.querySelector('#nfc-status')
     try {
@@ -792,7 +1093,6 @@ function bind() {
       showToast(msg)
     }
   })
-
 
   const video = app.querySelector<HTMLVideoElement>('#qr-video')
   const wrap = app.querySelector('#qr-video-wrap')
@@ -868,18 +1168,12 @@ function bind() {
         syncCalc()
         render()
       })
-      app.querySelector(`#${id}`)?.addEventListener('input', () => {
-        // live update on blur/change only for selects; for numbers re-render on change
-      })
     },
   )
 
-  // Live recalc on input for number fields without full remount thrash — re-render on change is fine for mobile
-  ;['c-weight', 'c-time', 'c-prep', 'c-post', 'c-cons', 'c-markup', 'c-fail'].forEach((id) => {
-    app.querySelector(`#${id}`)?.addEventListener('change', () => {
-      syncCalc()
-      render()
-    })
+  app.querySelector('#goto-settings')?.addEventListener('click', () => {
+    tab = 'nastavitve'
+    render()
   })
 
   app.querySelector('#calc-sample')?.addEventListener('click', () => {
@@ -893,7 +1187,60 @@ function bind() {
     calcMarkup = '1.5'
     calcFailure = '20'
     render()
-    showToast(`Vzorec → ${formatEuro(sanitySuggested())}`)
+    showToast(`Vzorec → ${formatEuro(sanitySuggested(settings))}`)
+  })
+
+  // Settings
+  app.querySelector('#save-rates')?.addEventListener('click', () => {
+    settings.electricityEurPerKwh = Number((app.querySelector('#s-energy') as HTMLInputElement).value) || 0
+    settings.laborEurPerHour = Number((app.querySelector('#s-labor') as HTMLInputElement).value) || 0
+    settings.failureRatePct = Number((app.querySelector('#s-fail') as HTMLInputElement).value) || 0
+    settings.defaultMarkup = Number((app.querySelector('#s-markup') as HTMLInputElement).value) || 1
+    persistSettings()
+    calcMarkup = String(settings.defaultMarkup)
+    calcFailure = String(settings.failureRatePct)
+    showToast('Stopnje shranjene')
+    render()
+  })
+
+  app.querySelector('#save-printers')?.addEventListener('click', () => {
+    app.querySelectorAll('[data-printer-idx]').forEach((row) => {
+      const i = Number((row as HTMLElement).dataset.printerIdx)
+      const p = settings.printers[i]
+      if (!p) return
+      p.price = Number((row.querySelector('[data-p="price"]') as HTMLInputElement).value) || 0
+      p.lifeHours = Number((row.querySelector('[data-p="lifeHours"]') as HTMLInputElement).value) || 1
+      p.serviceCost = Number((row.querySelector('[data-p="serviceCost"]') as HTMLInputElement).value) || 0
+      p.energyKwhPerH =
+        Number((row.querySelector('[data-p="energyKwhPerH"]') as HTMLInputElement).value) || 0
+    })
+    persistSettings()
+    showToast('Tiskalniki shranjeni')
+    render()
+  })
+
+  app.querySelector('#save-materials')?.addEventListener('click', () => {
+    app.querySelectorAll('[data-material-idx]').forEach((row) => {
+      const i = Number((row as HTMLElement).dataset.materialIdx)
+      const m = settings.materials[i]
+      if (!m) return
+      m.category = (row.querySelector('[data-m="category"]') as HTMLSelectElement)
+        .value as MaterialCategory
+      m.pricePerKg = Number((row.querySelector('[data-m="pricePerKg"]') as HTMLInputElement).value) || 0
+    })
+    persistSettings()
+    showToast('Materiali shranjeni')
+    render()
+  })
+
+  app.querySelector('#reset-settings')?.addEventListener('click', () => {
+    if (!confirm('Ponastavim vse nastavitve na Excel privzete?')) return
+    settings = resetSettings()
+    calcMarkup = String(settings.defaultMarkup)
+    calcFailure = String(settings.failureRatePct)
+    calcPrinter = settings.printers[0]?.id ?? calcPrinter
+    showToast('Ponastavljeno na Excel')
+    render()
   })
 }
 
@@ -903,4 +1250,4 @@ void registerServiceWorker()
 handleHash()
 if (!showEditor) render()
 
-console.info('[filament-hs-3d] sanity suggested ≈', sanitySuggested().toFixed(2), '€')
+console.info('[filament-hs-3d] sanity suggested ≈', sanitySuggested(settings).toFixed(2), '€')

@@ -8,7 +8,7 @@ export type MaterialCategory =
   | 'Resin'
   | 'Other'
 
-export type TabId = 'zaloga' | 'nfc' | 'kalkulator'
+export type TabId = 'zaloga' | 'nfc' | 'kalkulator' | 'nastavitve'
 
 export interface Spool {
   id: string
@@ -48,6 +48,16 @@ export interface MaterialDef {
   spoolKg?: number
 }
 
+export interface AppSettings {
+  version: 1
+  electricityEurPerKwh: number
+  laborEurPerHour: number
+  failureRatePct: number
+  defaultMarkup: number
+  printers: PrinterDef[]
+  materials: MaterialDef[]
+}
+
 export interface CalcInput {
   printerId: string
   materialId: string
@@ -71,4 +81,11 @@ export interface CalcBreakdown {
   withFailures: number
   suggested: number
   printHours: number
+}
+
+/** Catalog entry for “Manjka” (common Prusa/Bambu colors+materials). */
+export interface CatalogColor {
+  material: MaterialCategory
+  color: string
+  brandHint: string
 }

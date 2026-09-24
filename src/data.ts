@@ -1,4 +1,4 @@
-import type { MaterialCategory, MaterialDef, PrinterDef, Spool } from './types.ts'
+import type { CatalogColor, MaterialCategory, MaterialDef, PrinterDef, Spool } from './types.ts'
 import { uid } from './storage.ts'
 
 export const ENERGY_COST = 0.2
@@ -160,4 +160,119 @@ export function percentFromGrams(remaining: number, full: number): number {
 
 export function gramsFromPercent(percent: number, full: number): number {
   return Math.max(0, (percent / 100) * full)
+}
+
+
+/** Map spool.color (Slovenian name, English, or #hex) → CSS color. Unknown → null. */
+const COLOR_NAME_MAP: Record<string, string> = {
+  črna: '#1a1a1a',
+  crna: '#1a1a1a',
+  black: '#1a1a1a',
+  'galaxy black': '#0d0d0d',
+  'jet black': '#111111',
+  bela: '#f5f5f5',
+  white: '#f5f5f5',
+  'pearl white': '#f8f4ec',
+  'natural': '#e8e0d0',
+  naravna: '#e8e0d0',
+  siva: '#8a8f98',
+  gray: '#8a8f98',
+  grey: '#8a8f98',
+  'silver': '#c0c4cc',
+  srebrna: '#c0c4cc',
+  oranžna: '#e85d04',
+  oranzna: '#e85d04',
+  orange: '#e85d04',
+  'prusa orange': '#e85d04',
+  rdeča: '#c41e3a',
+  rdeca: '#c41e3a',
+  red: '#c41e3a',
+  modra: '#1e5aa8',
+  blue: '#1e5aa8',
+  'royal blue': '#1e5aa8',
+  zelena: '#2e7d32',
+  green: '#2e7d32',
+  rumena: '#f5c518',
+  yellow: '#f5c518',
+  roza: '#e91e8c',
+  pink: '#e91e8c',
+  vijolična: '#7b2cbf',
+  vijolicna: '#7b2cbf',
+  purple: '#7b2cbf',
+  rjava: '#6d4c41',
+  brown: '#6d4c41',
+  transparentna: 'rgba(200,220,240,0.35)',
+  transparent: 'rgba(200,220,240,0.35)',
+  clear: 'rgba(200,220,240,0.35)',
+  gold: '#d4a017',
+  zlata: '#d4a017',
+  copper: '#b87333',
+  bakrena: '#b87333',
+  cyan: '#00bcd4',
+  magenta: '#d5006d',
+  'army green': '#4b5320',
+  'lime green': '#a8e10c',
+  'sky blue': '#4fc3f7',
+  'hot pink': '#ff69b4',
+  'ivory white': '#fffff0',
+  'anthracite grey': '#3b3f46',
+  antracit: '#3b3f46',
+}
+
+export function colorToCss(color: string): string | null {
+  const raw = (color || '').trim()
+  if (!raw) return null
+  if (/^#([0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i.test(raw)) return raw
+  if (/^rgba?\(/i.test(raw) || /^hsla?\(/i.test(raw)) return raw
+  const key = raw.toLowerCase().normalize('NFD').replace(/\p{M}/gu, '')
+  // try with diacritics stripped AND original lowercased
+  const keyOrig = raw.toLowerCase()
+  return COLOR_NAME_MAP[keyOrig] ?? COLOR_NAME_MAP[key] ?? null
+}
+
+export function colorInitial(color: string): string {
+  const t = (color || '?').trim()
+  return (t[0] || '?').toUpperCase()
+}
+
+/**
+ * Common Prusa / Bambu Lab colors+materials for the “Manjka” view.
+ * Seed colors from seedSpools + sensible defaults.
+ */
+export const CATALOG_COLORS: CatalogColor[] = [
+  // From seed data
+  { material: 'PLA', color: 'Črna', brandHint: 'Trcek / Prusa / Bambu' },
+  { material: 'PLA', color: 'Oranžna', brandHint: 'Prusament' },
+  { material: 'PLA', color: 'Bela', brandHint: 'Prusament / Bambu' },
+  { material: 'PETG', color: 'Transparentna', brandHint: 'Prusament' },
+  { material: 'ASA', color: 'Siva', brandHint: 'Prusament' },
+  // Prusa / Bambu commons — PLA
+  { material: 'PLA', color: 'Galaxy Black', brandHint: 'Prusament' },
+  { material: 'PLA', color: 'Prusa Orange', brandHint: 'Prusament' },
+  { material: 'PLA', color: 'Jet Black', brandHint: 'Bambu' },
+  { material: 'PLA', color: 'Red', brandHint: 'Prusa / Bambu' },
+  { material: 'PLA', color: 'Blue', brandHint: 'Prusa / Bambu' },
+  { material: 'PLA', color: 'Green', brandHint: 'Prusa / Bambu' },
+  { material: 'PLA', color: 'Yellow', brandHint: 'Prusa / Bambu' },
+  { material: 'PLA', color: 'Pink', brandHint: 'Bambu' },
+  { material: 'PLA', color: 'Purple', brandHint: 'Bambu' },
+  { material: 'PLA', color: 'Silver', brandHint: 'Prusa / Bambu' },
+  { material: 'PLA', color: 'Gray', brandHint: 'Bambu' },
+  { material: 'PLA', color: 'Natural', brandHint: 'Prusa' },
+  // PETG
+  { material: 'PETG', color: 'Črna', brandHint: 'Prusament / Bambu' },
+  { material: 'PETG', color: 'Bela', brandHint: 'Prusament / Bambu' },
+  { material: 'PETG', color: 'Oranžna', brandHint: 'Prusament' },
+  { material: 'PETG', color: 'Siva', brandHint: 'Prusa / Bambu' },
+  { material: 'PETG', color: 'Blue', brandHint: 'Prusa / Bambu' },
+  { material: 'PETG', color: 'Red', brandHint: 'Prusa / Bambu' },
+  // ASA
+  { material: 'ASA', color: 'Črna', brandHint: 'Prusament' },
+  { material: 'ASA', color: 'Bela', brandHint: 'Prusament' },
+  { material: 'ASA', color: 'Oranžna', brandHint: 'Prusament' },
+  { material: 'ASA', color: 'Natural', brandHint: 'Prusament' },
+]
+
+export function normalizeColorKey(color: string): string {
+  return color.trim().toLowerCase().normalize('NFD').replace(/\p{M}/gu, '')
 }

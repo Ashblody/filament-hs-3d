@@ -1,7 +1,7 @@
 {
   "name": "filament-hs-3d",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.1.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -26,5 +26,5 @@
     "typescript": "~5.8.3",
     "vite": "^6.3.5"
   },
-  "description": "Filament / HS 3D — zaloga, NFC/QR, kalkulator tiska"
+  "description": "Filament / HS 3D \u2014 zaloga, NFC/QR, kalkulator tiska"
 }
