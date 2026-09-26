@@ -56,6 +56,7 @@ import {
   uid,
 } from './storage.ts'
 import { mergeDocStock } from './stockSeed.ts'
+import { buyGroups, buyLine, spoolCount, spoolPctOf as spoolPct, type BuyGroup } from './buyList.ts'
 import type {
   AppData,
   AppSettings,
@@ -73,7 +74,7 @@ let settings: AppSettings = loadSettings()
 let tab: TabId = 'zaloga'
 let materialFilter: MaterialCategory | 'vse' = 'vse'
 let colorFilter: string | 'vse' = 'vse'
-let stockView: 'zaloga' | 'manjka' = 'zaloga'
+let stockView: 'zaloga' | 'manjka' | 'nakup' = 'zaloga'
 let expandedId: string | null = null
 let editingId: string | null = null
 let showEditor = false
@@ -102,12 +103,6 @@ let calcFailure = String(settings.failureRatePct)
 
 function persist() {
   saveData(data)
-}
-
-/** Preostanek v % — pri neznani teži iz remainingPct. */
-function spoolPct(s: Spool): number {
-  if (s.weightUnknown) return Math.max(0, Math.min(100, Number(s.remainingPct) || 0))
-  return percentFromGrams(s.remainingGrams, s.fullSpoolGrams || DEFAULT_FULL_SPOOL_G)
 }
 
 function persistSettings() {
@@ -315,6 +310,7 @@ function renderZaloga() {
   const colors = uniqueStockColors()
   const list = filteredSpools()
   const missing = missingCatalog()
+  const buy = buyList()
 
   return `
     <section class="card">
@@ -324,6 +320,7 @@ function renderZaloga() {
       </div>
       <div class="view-toggle" role="tablist">
         <button type="button" data-stock-view="zaloga" class="${stockView === 'zaloga' ? 'active' : ''}">Zaloga</button>
+        <button type="button" data-stock-view="nakup" class="${stockView === 'nakup' ? 'active' : ''}">Za nakup (${buy.length})</button>
         <button type="button" data-stock-view="manjka" class="${stockView === 'manjka' ? 'active' : ''}">Manjka (${missing.length})</button>
       </div>
       <p class="hint">Tap = razširi · dvojni tap = uredi. Lokalno v localStorage.</p>
@@ -361,6 +358,8 @@ function renderZaloga() {
       ${
         stockView === 'manjka'
           ? renderManjka(missing)
+          : stockView === 'nakup'
+            ? renderZaNakup(buy)
           : list.length === 0
             ? `<div class="empty">Ni tuljav. Dodaj novo ali počisti filter.</div>`
             : `<div class="spool-list">
@@ -391,6 +390,68 @@ function renderSpoolRow(s: Spool): string {
         <div class="edit-hint">Dvojni tap za urejanje parametrov</div>
       </div>
     </div>`
+}
+
+/** Skupine (material+barva+proizvajalec), kjer so vse tuljave pod pragom; upošteva filtre. */
+function buyList(): BuyGroup[] {
+  return buyGroups(data.spools, settings.lowStockPct, settings.lowStockGrams).filter(
+    (g) =>
+      (materialFilter === 'vse' || g.material === materialFilter) &&
+      (colorFilter === 'vse' || normalizeColorKey(g.color) === normalizeColorKey(colorFilter)),
+  )
+}
+
+function renderZaNakup(buy: BuyGroup[]): string {
+  const rule = `pod ${settings.lowStockPct} % ali pod ${settings.lowStockGrams} g (prag v Nastavitvah)`
+  if (buy.length === 0) {
+    return `<div class="empty">Nič za nakup — nobena barva ni povsem pod pragom (${escapeHtml(rule)}).</div>`
+  }
+  return `
+    <div class="row-between">
+      <p class="hint" style="margin:0">Vse tuljave v skupini so ${escapeHtml(rule)}.</p>
+      <button type="button" class="btn btn-ghost btn-sm" id="copy-buy-list">Kopiraj seznam</button>
+    </div>
+    <div class="manjka-list">
+      ${buy
+        .map(
+          (g) => `
+        <div class="manjka-item">
+          ${renderSwatch(g.color, g.colorHex)}
+          <div>
+            <div class="title">${escapeHtml(g.color)} · ${escapeHtml(g.label)}</div>
+            <div class="meta">${escapeHtml(g.manufacturer)} · ${escapeHtml(spoolCount(g.count))}</div>
+          </div>
+          <span class="tag">${g.gramsKnown ? formatGrams(g.grams) : `${Math.round(g.pct)} %`}</span>
+        </div>`,
+        )
+        .join('')}
+    </div>`
+}
+
+async function copyText(text: string): Promise<boolean> {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text)
+      return true
+    }
+  } catch {
+    /* fallback spodaj */
+  }
+  const ta = document.createElement('textarea')
+  ta.value = text
+  ta.setAttribute('readonly', '')
+  ta.style.position = 'fixed'
+  ta.style.opacity = '0'
+  document.body.appendChild(ta)
+  ta.select()
+  let ok = false
+  try {
+    ok = document.execCommand('copy')
+  } catch {
+    ok = false
+  }
+  ta.remove()
+  return ok
 }
 
 function renderManjka(missing: CatalogColor[]): string {
@@ -851,6 +912,16 @@ function renderSettingsList() {
           <input id="s-markup" type="number" min="0.1" step="0.1" value="${settings.defaultMarkup}" />
         </div>
       </div>
+      <div class="row">
+        <div class="field inline">
+          <label for="s-low-pct">Za nakup: pod (%)</label>
+          <input id="s-low-pct" type="number" min="0" max="100" step="1" value="${settings.lowStockPct}" />
+        </div>
+        <div class="field inline">
+          <label for="s-low-g">ali pod (g)</label>
+          <input id="s-low-g" type="number" min="0" step="10" value="${settings.lowStockGrams}" />
+        </div>
+      </div>
       <button type="button" class="btn btn-primary btn-block" id="save-rates">Shrani stopnje</button>
     </section>
     <section class="card">
@@ -1027,7 +1098,7 @@ function bind() {
 
   app.querySelectorAll('[data-stock-view]').forEach((btn) => {
     btn.addEventListener('click', () => {
-      stockView = (btn as HTMLElement).dataset.stockView as 'zaloga' | 'manjka'
+      stockView = (btn as HTMLElement).dataset.stockView as 'zaloga' | 'manjka' | 'nakup'
       render()
     })
   })
@@ -1104,6 +1175,16 @@ function bind() {
       showToast('Dodano — uredi parametre')
       render()
     })
+  })
+
+  app.querySelector('#copy-buy-list')?.addEventListener('click', async () => {
+    const buy = buyList()
+    const text = buy.map(buyLine).join('\n')
+    if (await copyText(text)) {
+      showToast(`Seznam kopiran (${buy.length})`)
+    } else {
+      window.prompt('Kopiraj seznam ročno:', text)
+    }
   })
 
   app.querySelector('#import-doc-stock')?.addEventListener('click', () => {
@@ -1410,6 +1491,10 @@ function bind() {
     settings.laborEurPerHour = Number((app.querySelector('#s-labor') as HTMLInputElement).value) || 0
     settings.failureRatePct = Number((app.querySelector('#s-fail') as HTMLInputElement).value) || 0
     settings.defaultMarkup = Number((app.querySelector('#s-markup') as HTMLInputElement).value) || 1
+    const lowPct = Number((app.querySelector('#s-low-pct') as HTMLInputElement).value)
+    const lowG = Number((app.querySelector('#s-low-g') as HTMLInputElement).value)
+    settings.lowStockPct = Number.isFinite(lowPct) ? Math.max(0, Math.min(100, lowPct)) : settings.lowStockPct
+    settings.lowStockGrams = Number.isFinite(lowG) ? Math.max(0, lowG) : settings.lowStockGrams
     persistSettings()
     calcMarkup = String(settings.defaultMarkup)
     calcFailure = String(settings.failureRatePct)

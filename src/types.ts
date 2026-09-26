@@ -66,6 +66,10 @@ export interface AppSettings {
   laborEurPerHour: number
   failureRatePct: number
   defaultMarkup: number
+  /** Za nakup: tuljava je «nizka» pod tem % … */
+  lowStockPct: number
+  /** … ali pod toliko grami (samo pri znani teži). */
+  lowStockGrams: number
   printers: PrinterDef[]
   materials: MaterialDef[]
 }

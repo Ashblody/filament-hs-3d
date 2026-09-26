@@ -6,6 +6,7 @@ import {
   MATERIALS,
   PRINTERS,
 } from './data.ts'
+import { DEFAULT_LOW_GRAMS, DEFAULT_LOW_PCT } from './buyList.ts'
 import type { AppSettings, MaterialCategory, MaterialDef, PrinterDef } from './types.ts'
 
 /** Keep compatible with existing installs. */
@@ -18,6 +19,8 @@ export function excelDefaultSettings(): AppSettings {
     laborEurPerHour: LABOR_RATE,
     failureRatePct: DEFAULT_FAILURE_RATE,
     defaultMarkup: DEFAULT_MARKUP,
+    lowStockPct: DEFAULT_LOW_PCT,
+    lowStockGrams: DEFAULT_LOW_GRAMS,
     printers: PRINTERS.map((p) => ({ ...p })),
     materials: MATERIALS.map((m) => ({ ...m })),
   }
@@ -103,6 +106,8 @@ function normalizeSettings(parsed: Partial<AppSettings>, defaults: AppSettings):
     laborEurPerHour: numOr(parsed.laborEurPerHour, defaults.laborEurPerHour),
     failureRatePct: numOr(parsed.failureRatePct, defaults.failureRatePct),
     defaultMarkup: numOr(parsed.defaultMarkup, defaults.defaultMarkup),
+    lowStockPct: numOr(parsed.lowStockPct, defaults.lowStockPct),
+    lowStockGrams: numOr(parsed.lowStockGrams, defaults.lowStockGrams),
     printers,
     materials,
   }
