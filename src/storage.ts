@@ -1,5 +1,5 @@
 import type { AppData, Spool } from './types.ts'
-import { seedSpools } from './data.ts'
+import { DOC_SEED_VERSION, mergeDocStock } from './stockSeed.ts'
 
 const DATA_KEY = 'filament-hs-3d-data-v1'
 
@@ -11,11 +11,9 @@ export function loadData(): AppData {
   try {
     const raw = localStorage.getItem(DATA_KEY)
     if (!raw) {
-      const data: AppData = {
-        version: 1,
-        spools: seedSpools(),
-        seeded: true,
-      }
+      // Sveža namestitev: namesto vzorcev naloži dejansko zalogo iz seznama.
+      const data: AppData = { version: 1, spools: [], seeded: true }
+      mergeDocStock(data)
       saveData(data)
       return data
     }
@@ -26,11 +24,15 @@ export function loadData(): AppData {
     const data: AppData = {
       version: 1,
       spools,
-      seeded: !!parsed.seeded,
+      seeded: !!parsed.seeded || spools.length > 0,
+      docSeeds: Array.isArray(parsed.docSeeds)
+        ? parsed.docSeeds.filter((x): x is string => typeof x === 'string')
+        : [],
     }
-    if (!data.seeded && data.spools.length === 0) {
-      data.spools = seedSpools()
+    // Enkratni uvoz na verzijo: doda samo manjkajoče id-je, obstoječih ne spreminja.
+    if (!data.docSeeds!.includes(DOC_SEED_VERSION)) {
       data.seeded = true
+      mergeDocStock(data)
       saveData(data)
     }
     return data

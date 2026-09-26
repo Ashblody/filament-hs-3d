@@ -26,6 +26,10 @@ export interface Spool {
   pricePerKg: number
   notes: string
   nfcTagId?: string
+  /** Nominalna teža neznana (npr. Filamentium) — UI kaže «neznano», gramov ne računa. */
+  weightUnknown?: boolean
+  /** Preostanek v % ko je teža neznana. */
+  remainingPct?: number
   createdAt: string
   updatedAt: string
 }
@@ -34,6 +38,8 @@ export interface AppData {
   version: 1
   spools: Spool[]
   seeded: boolean
+  /** Verzije uvoza iz seznama, ki so že bile uporabljene (enkrat na verzijo). */
+  docSeeds?: string[]
 }
 
 export interface PrinterDef {

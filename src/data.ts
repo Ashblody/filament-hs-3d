@@ -76,6 +76,15 @@ export const MATERIALS: MaterialDef[] = [
   { id: 'woodfill-prusa', name: 'Woodfill PRUSA', category: 'Woodfill', pricePerKg: 40, spoolPrice: 40, spoolKg: 1 },
   { id: 'woodfill-trcek', name: 'woodfill trcek', category: 'Woodfill', pricePerKg: 24 / 0.7, spoolPrice: 24, spoolKg: 0.7 },
   { id: 'resin-generic', name: 'Resin (splošno)', category: 'Resin', pricePerKg: 50, spoolPrice: 50, spoolKg: 1 },
+  // Dodano za uvoz Andrejeve zaloge (26. 9. 2026) — cene so ocene, uredi v Nastavitvah.
+  { id: 'trcek-pla-hs', name: 'Trček PLA HS', category: 'PLA', pricePerKg: 22, spoolPrice: 22, spoolKg: 1 },
+  { id: 'trcek-pla-hs-matte', name: 'Trček PLA HS Matte', category: 'PLA', pricePerKg: 23, spoolPrice: 23, spoolKg: 1 },
+  { id: 'buddy3d-pla', name: 'Buddy3D PLA', category: 'PLA', pricePerKg: 20, spoolPrice: 20, spoolKg: 1 },
+  { id: 'filamentium-pla-galaxy', name: 'Filamentium PLA Galaxy', category: 'PLA', pricePerKg: 27.5 / 0.75 },
+  { id: 'prusament-petg-matte', name: 'Prusament PETG Matte', category: 'PETG', pricePerKg: 32, spoolPrice: 32, spoolKg: 1 },
+  { id: 'trcek-asa-plus', name: 'Trček ASA+', category: 'ASA', pricePerKg: 22, spoolPrice: 22, spoolKg: 1 },
+  { id: 'trcek-pctg', name: 'Trček PCTG', category: 'PCTG', pricePerKg: 30, spoolPrice: 30, spoolKg: 1 },
+  { id: 'pa12-unknown', name: 'PA12 (neznan proizvajalec)', category: 'Nylon', pricePerKg: 40 / 0.7, spoolPrice: 40, spoolKg: 0.7 },
 ]
 
 export function findPrinter(id: string): PrinterDef {
@@ -233,6 +242,23 @@ const COLOR_NAME_MAP: Record<string, string> = {
   'ivory white': '#fffff0',
   'anthracite grey': '#3b3f46',
   antracit: '#3b3f46',
+  'baby modra': '#89cff0',
+  'limeta zelena': '#a8e10c',
+  'neon zelena': '#39ff14',
+  'antracitno siva': '#3b3f46',
+  'svetlo siva': '#c4c7cc',
+  'urbano siva': '#6b6e70',
+  'dzungla zelena': '#3b5d3a',
+  slonokoscena: '#f3ecd8',
+  'galaxy modra': '#1c3f8c',
+  'galaxy zelena': '#1f5a3a',
+  'galaxy cesnjeva': '#7b1e3a',
+  'galaxy rjava': '#4a3024',
+  'galaxy zeleno-rjava': '#4b4a2a',
+  'galaxy srebrna': '#9ea3aa',
+  'galaxy rdeca': '#8b1a1a',
+  'mystic rjava': '#5a3d2b',
+  'mystic zelena': '#2f4f3a',
 }
 
 export function colorToCss(color: string): string | null {
@@ -286,6 +312,26 @@ export const COLOR_PALETTE: PaletteColor[] = [
   { name: 'Cyan', hex: '#00bcd4' },
   { name: 'Magenta', hex: '#d5006d' },
   { name: 'Transparentna', hex: '#c8dcf0' },
+  // Iz Andrejeve zaloge (26. 9. 2026)
+  { name: 'Naravna', hex: '#e8e0d0' },
+  { name: 'Srebrna', hex: '#c0c4cc' },
+  { name: 'Antracitno siva', hex: '#3b3f46' },
+  { name: 'Svetlo siva', hex: '#c4c7cc' },
+  { name: 'Urbano siva', hex: '#6b6e70' },
+  { name: 'Baby modra', hex: '#89cff0' },
+  { name: 'Limeta zelena', hex: '#a8e10c' },
+  { name: 'Neon zelena', hex: '#39ff14' },
+  { name: 'Džungla zelena', hex: '#3b5d3a' },
+  { name: 'Slonokoščena', hex: '#f3ecd8' },
+  { name: 'Galaxy modra', hex: '#1c3f8c' },
+  { name: 'Galaxy zelena', hex: '#1f5a3a' },
+  { name: 'Galaxy češnjeva', hex: '#7b1e3a' },
+  { name: 'Galaxy rjava', hex: '#4a3024' },
+  { name: 'Galaxy zeleno-rjava', hex: '#4b4a2a' },
+  { name: 'Galaxy srebrna', hex: '#9ea3aa' },
+  { name: 'Galaxy rdeča', hex: '#8b1a1a' },
+  { name: 'Mystic rjava', hex: '#5a3d2b' },
+  { name: 'Mystic zelena', hex: '#2f4f3a' },
 ]
 
 /** Prefer stored hex, else name map / raw hex. */

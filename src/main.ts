@@ -55,6 +55,7 @@ import {
   saveData,
   uid,
 } from './storage.ts'
+import { mergeDocStock } from './stockSeed.ts'
 import type {
   AppData,
   AppSettings,
@@ -101,6 +102,12 @@ let calcFailure = String(settings.failureRatePct)
 
 function persist() {
   saveData(data)
+}
+
+/** Preostanek v % — pri neznani teži iz remainingPct. */
+function spoolPct(s: Spool): number {
+  if (s.weightUnknown) return Math.max(0, Math.min(100, Number(s.remainingPct) || 0))
+  return percentFromGrams(s.remainingGrams, s.fullSpoolGrams || DEFAULT_FULL_SPOOL_G)
 }
 
 function persistSettings() {
@@ -320,6 +327,7 @@ function renderZaloga() {
         <button type="button" data-stock-view="manjka" class="${stockView === 'manjka' ? 'active' : ''}">Manjka (${missing.length})</button>
       </div>
       <p class="hint">Tap = razširi · dvojni tap = uredi. Lokalno v localStorage.</p>
+      <button type="button" class="btn btn-ghost btn-sm" id="import-doc-stock">Uvozi zalogo iz seznama</button>
       <div class="summary-chips">
         <button type="button" class="chip ${materialFilter === 'vse' ? 'active' : ''}" data-filter-mat="vse">
           Material: vse
@@ -364,7 +372,7 @@ function renderZaloga() {
 }
 
 function renderSpoolRow(s: Spool): string {
-  const pct = percentFromGrams(s.remainingGrams, s.fullSpoolGrams || DEFAULT_FULL_SPOOL_G)
+  const pct = spoolPct(s)
   const expanded = expandedId === s.id
   return `
     <div class="spool-item${expanded ? ' expanded' : ''}" data-spool-id="${escapeHtml(s.id)}" role="button" tabindex="0">
@@ -374,10 +382,10 @@ function renderSpoolRow(s: Spool): string {
           <div class="title">${escapeHtml(s.color || 'brez barve')} · ${escapeHtml(s.material)}</div>
           <div class="basics">${escapeHtml(s.brandName)}${s.nfcTagId ? ' · NFC' : ''}</div>
         </div>
-        <div class="spool-amt">${formatGrams(s.remainingGrams)}<span class="pct">${pct.toFixed(0)} %</span></div>
+        <div class="spool-amt">${s.weightUnknown ? 'neznano' : formatGrams(s.remainingGrams)}<span class="pct">${pct.toFixed(0)} %</span></div>
       </div>
       <div class="spool-details">
-        <div class="meta-line">${s.pricePerKg.toFixed(2)} €/kg · polna ${formatGrams(s.fullSpoolGrams || DEFAULT_FULL_SPOOL_G)}</div>
+        <div class="meta-line">${s.pricePerKg.toFixed(2)} €/kg · polna ${s.weightUnknown ? 'neznano' : formatGrams(s.fullSpoolGrams || DEFAULT_FULL_SPOOL_G)}</div>
         ${s.notes ? `<div class="meta-line">${escapeHtml(s.notes)}</div>` : ''}
         <div class="bar"><span style="width:${pct.toFixed(0)}%"></span></div>
         <div class="edit-hint">Dvojni tap za urejanje parametrov</div>
@@ -413,7 +421,7 @@ function renderEditorModal() {
   const spool = editingId ? data.spools.find((s) => s.id === editingId) : null
   const s = spool ?? emptySpool()
   const isNew = !spool
-  const pct = percentFromGrams(s.remainingGrams, s.fullSpoolGrams || DEFAULT_FULL_SPOOL_G)
+  const pct = spoolPct(s)
   const nfcOk = isNfcSupported()
   const link = spoolAbsoluteLink(s.id, APP_PAGES_URL)
 
@@ -476,7 +484,7 @@ function renderEditorModal() {
           <div class="row">
             <div class="field inline">
               <label for="f-grams">Preostalo (g)</label>
-              <input id="f-grams" name="grams" type="number" min="0" step="1" value="${s.remainingGrams}" />
+              <input id="f-grams" name="grams" type="number" min="0" step="1" value="${s.weightUnknown ? '' : s.remainingGrams}" placeholder="${s.weightUnknown ? 'neznano' : ''}" />
             </div>
             <div class="field inline">
               <label for="f-percent">ali %</label>
@@ -484,7 +492,7 @@ function renderEditorModal() {
             </div>
             <div class="field inline">
               <label for="f-full">Polna tuljava (g)</label>
-              <input id="f-full" name="full" type="number" min="1" step="1" value="${s.fullSpoolGrams || DEFAULT_FULL_SPOOL_G}" />
+              <input id="f-full" name="full" type="number" min="1" step="1" value="${s.weightUnknown ? '' : s.fullSpoolGrams || DEFAULT_FULL_SPOOL_G}" placeholder="${s.weightUnknown ? 'neznano' : ''}" />
             </div>
           </div>
           <div class="field">
@@ -610,6 +618,8 @@ function upsertSpoolFromOpenPrintTag(result: NfcReadResult): string {
     existing.brandName = brandName
     existing.fullSpoolGrams = full
     existing.remainingGrams = remaining
+    delete existing.weightUnknown
+    delete existing.remainingPct
     if (pricePerKg > 0) existing.pricePerKg = pricePerKg
     if (serial) existing.nfcTagId = serial
     existing.notes = notesParts.join(' ')
@@ -1096,6 +1106,14 @@ function bind() {
     })
   })
 
+  app.querySelector('#import-doc-stock')?.addEventListener('click', () => {
+    if (!confirm('Uvozim zalogo iz seznama? Dodane bodo samo manjkajoče tuljave, obstoječe ostanejo nespremenjene.')) return
+    const added = mergeDocStock(data)
+    persist()
+    showToast(added ? `Dodano iz seznama: ${added}` : 'Vse tuljave iz seznama so že v zalogi')
+    render()
+  })
+
   app.querySelector('#add-spool')?.addEventListener('click', () => {
     editingId = null
     showEditor = true
@@ -1116,15 +1134,23 @@ function bind() {
     const brandEl = form.querySelector<HTMLInputElement>('#f-brand')!
 
     percentEl.addEventListener('input', () => {
+      if (!fullEl.value.trim()) return // teža neznana — gramov ne računamo
       const full = Number(fullEl.value) || DEFAULT_FULL_SPOOL_G
       gramsEl.value = String(Math.round(gramsFromPercent(Number(percentEl.value) || 0, full)))
     })
     gramsEl.addEventListener('input', () => {
+      if (!fullEl.value.trim()) return
       const full = Number(fullEl.value) || DEFAULT_FULL_SPOOL_G
       percentEl.value = String(Math.round(percentFromGrams(Number(gramsEl.value) || 0, full)))
     })
     fullEl.addEventListener('input', () => {
+      if (!fullEl.value.trim()) return
       const full = Number(fullEl.value) || DEFAULT_FULL_SPOOL_G
+      if (!gramsEl.value.trim()) {
+        // prej neznana teža: grame izračunaj iz %
+        gramsEl.value = String(Math.round(gramsFromPercent(Number(percentEl.value) || 0, full)))
+        return
+      }
       percentEl.value = String(Math.round(percentFromGrams(Number(gramsEl.value) || 0, full)))
     })
     brandEl.addEventListener('change', () => {
@@ -1173,19 +1199,24 @@ function bind() {
       e.preventDefault()
       const now = new Date().toISOString()
       const existing = editingId ? data.spools.find((s) => s.id === editingId) : null
+      const unknownWeight = !!existing?.weightUnknown && !fullEl.value.trim()
       const spool: Spool = {
         id: existing?.id ?? uid('spool'),
         material: (form.querySelector('#f-material') as HTMLSelectElement).value as MaterialCategory,
         color: (form.querySelector('#f-color') as HTMLInputElement).value.trim(),
         colorHex: (form.querySelector('#f-color-hex') as HTMLInputElement)?.value.trim() || undefined,
         brandName: brandEl.value.trim(),
-        remainingGrams: Number(gramsEl.value) || 0,
-        fullSpoolGrams: Number(fullEl.value) || DEFAULT_FULL_SPOOL_G,
+        remainingGrams: unknownWeight ? 0 : Number(gramsEl.value) || 0,
+        fullSpoolGrams: unknownWeight ? 0 : Number(fullEl.value) || DEFAULT_FULL_SPOOL_G,
         pricePerKg: Number(priceEl.value) || 0,
         notes: (form.querySelector('#f-notes') as HTMLTextAreaElement).value.trim(),
         nfcTagId: (form.querySelector('#f-nfc') as HTMLInputElement).value.trim() || undefined,
         createdAt: existing?.createdAt ?? now,
         updatedAt: now,
+      }
+      if (unknownWeight) {
+        spool.weightUnknown = true
+        spool.remainingPct = Math.max(0, Math.min(100, Number(percentEl.value) || 0))
       }
       if (existing) {
         data.spools = data.spools.map((s) => (s.id === existing.id ? spool : s))
