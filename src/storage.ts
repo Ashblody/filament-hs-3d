@@ -32,7 +32,8 @@ export function loadData(): AppData {
     // Enkratni uvoz na verzijo: doda samo manjkajoče id-je, obstoječih ne spreminja.
     if (!data.docSeeds!.includes(DOC_SEED_VERSION)) {
       data.seeded = true
-      mergeDocStock(data)
+      const alreadyImported = data.docSeeds!.some((v) => v.startsWith('doc-2026-09-26-'))
+      mergeDocStock(data, !alreadyImported)
       saveData(data)
     }
     return data

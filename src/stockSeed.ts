@@ -5,7 +5,7 @@ import type { AppData, MaterialCategory, Spool } from './types.ts'
  * Uvozi se enkrat na verzijo (DOC_SEED_VERSION) in se združi po id:
  * nikoli ne podvaja, ne briše in ne prepisuje obstoječe zaloge.
  */
-export const DOC_SEED_VERSION = 'doc-2026-09-26-v1'
+export const DOC_SEED_VERSION = 'doc-2026-09-26-v2'
 const SEED_DATE = '2026-09-26T09:00:00.000Z'
 
 interface Row {
@@ -84,7 +84,7 @@ function r(
   return { material, color: name, colorHex: hex, ...mat, pct, weight, notes }
 }
 
-const FIL = 'Filamentium nima 1 kg rol — teža neznana, uredi.'
+const FIL = 'Filamentium rola 750 g'
 
 /** Vrstni red = vrstni red v Google Docu. */
 export const DOC_STOCK_ROWS: Row[] = [
@@ -104,13 +104,13 @@ export const DOC_STOCK_ROWS: Row[] = [
   r('PLA', 'bela', B_PLA, 100),
   r('PLA', 'crna', B_PLA, 100, 1000, 'Kos 1/2'),
   r('PLA', 'crna', B_PLA, 100, 1000, 'Kos 2/2'),
-  r('PLA', 'gModra', F_GAL, 50, null, FIL),
-  r('PLA', 'gZelena', F_GAL, 50, null, FIL),
-  r('PLA', 'gCesnja', F_GAL, 80, null, FIL),
-  r('PLA', 'gRjava', F_GAL, 90, null, FIL),
-  r('PLA', 'gZelRjava', F_GAL, 90, null, FIL),
-  r('PLA', 'gSrebrna', F_GAL, 90, null, FIL),
-  r('PLA', 'gRdeca', F_GAL, 80, null, FIL),
+  r('PLA', 'gModra', F_GAL, 50, 750, FIL),
+  r('PLA', 'gZelena', F_GAL, 50, 750, FIL),
+  r('PLA', 'gCesnja', F_GAL, 80, 750, FIL),
+  r('PLA', 'gRjava', F_GAL, 90, 750, FIL),
+  r('PLA', 'gZelRjava', F_GAL, 90, 750, FIL),
+  r('PLA', 'gSrebrna', F_GAL, 90, 750, FIL),
+  r('PLA', 'gRdeca', F_GAL, 80, 750, FIL),
   r('PLA', 'bela', T_PLA, 20, 1000, 'Refill spool'),
   r('PLA', 'rdeca', T_PLA_HSM, 50),
   r('PETG', 'dzungla', P_PETG, 50, 1000, 'Jungle Green'),
@@ -165,15 +165,34 @@ export function docSeedSpools(): Spool[] {
   })
 }
 
-/** Doda samo manjkajoče id-je. Vrne število dodanih. */
-export function mergeDocStock(data: AppData): number {
+const FIL_750_IDS = new Set(
+  ['17', '18', '19', '20', '21', '22', '23'].map((n) => `doc-2026-09-26-${n}`),
+)
+
+/**
+ * Doda samo manjkajoče id-je. Vrne število dodanih.
+ * addMissing=false: samo popravek teže (seznam je bil že uvožen v prejšnji verziji,
+ * zato ne vračamo tuljav, ki jih je uporabnik medtem izbrisal).
+ */
+export function mergeDocStock(data: AppData, addMissing = true): number {
   const have = new Set(data.spools.map((s) => s.id))
   let added = 0
-  for (const s of docSeedSpools()) {
+  for (const s of addMissing ? docSeedSpools() : []) {
     if (have.has(s.id)) continue
     data.spools.push(s)
     have.add(s.id)
     added++
+  }
+  // v1 (1.3.0) je Filamentium uvozil z neznano težo; lastnik potrdil 750 g.
+  // Popravi samo nedotaknjene uvožene tuljave (še neznana teža in nespremenjene).
+  for (const s of data.spools) {
+    if (!FIL_750_IDS.has(s.id) || !s.weightUnknown || s.updatedAt !== SEED_DATE) continue
+    const pct = Number(s.remainingPct) || 0
+    s.fullSpoolGrams = 750
+    s.remainingGrams = Math.round((pct / 100) * 750)
+    s.notes = [FIL, 'Uvoz iz seznama 26. 9. 2026'].join(' · ')
+    delete s.weightUnknown
+    delete s.remainingPct
   }
   const applied = new Set(data.docSeeds ?? [])
   applied.add(DOC_SEED_VERSION)

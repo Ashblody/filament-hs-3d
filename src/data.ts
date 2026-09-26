@@ -80,7 +80,7 @@ export const MATERIALS: MaterialDef[] = [
   { id: 'trcek-pla-hs', name: 'Trček PLA HS', category: 'PLA', pricePerKg: 22, spoolPrice: 22, spoolKg: 1 },
   { id: 'trcek-pla-hs-matte', name: 'Trček PLA HS Matte', category: 'PLA', pricePerKg: 23, spoolPrice: 23, spoolKg: 1 },
   { id: 'buddy3d-pla', name: 'Buddy3D PLA', category: 'PLA', pricePerKg: 20, spoolPrice: 20, spoolKg: 1 },
-  { id: 'filamentium-pla-galaxy', name: 'Filamentium PLA Galaxy', category: 'PLA', pricePerKg: 27.5 / 0.75 },
+  { id: 'filamentium-pla-galaxy', name: 'Filamentium PLA Galaxy', category: 'PLA', pricePerKg: 27.5 / 0.75, spoolPrice: 27.5, spoolKg: 0.75 },
   { id: 'prusament-petg-matte', name: 'Prusament PETG Matte', category: 'PETG', pricePerKg: 32, spoolPrice: 32, spoolKg: 1 },
   { id: 'trcek-asa-plus', name: 'Trček ASA+', category: 'ASA', pricePerKg: 22, spoolPrice: 22, spoolKg: 1 },
   { id: 'trcek-pctg', name: 'Trček PCTG', category: 'PCTG', pricePerKg: 30, spoolPrice: 30, spoolKg: 1 },
