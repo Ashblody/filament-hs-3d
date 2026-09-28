@@ -1,3 +1,4 @@
+import { Capacitor } from '@capacitor/core'
 import type { AppData, Spool } from './types.ts'
 import { DOC_SEED_VERSION, mergeDocStock } from './stockSeed.ts'
 
@@ -84,6 +85,16 @@ export function formatDateTime(iso: string): string {
 
 export async function registerServiceWorker(): Promise<void> {
   if (!('serviceWorker' in navigator)) return
+  // Capacitor APK serves bundled files locally — no SW needed; drop any left by older APKs.
+  if (Capacitor.isNativePlatform()) {
+    try {
+      const regs = await navigator.serviceWorker.getRegistrations()
+      await Promise.all(regs.map((r) => r.unregister()))
+    } catch {
+      /* ignore */
+    }
+    return
+  }
   try {
     const base = import.meta.env.BASE_URL
     const swUrl = `${base}sw.js`
